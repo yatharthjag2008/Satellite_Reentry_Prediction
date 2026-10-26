@@ -1,0 +1,11 @@
+requests
+sgp4
+skyfield
+pandas
+numpy
+scikit-learn
+xgboost
+shap
+matplotlib
+streamlit
+jupyter
