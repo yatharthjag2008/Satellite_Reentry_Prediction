@@ -7,6 +7,8 @@ Press Enter on an empty line (or type q) to quit.
     python src/lookup_satellite.py
 """
 
+import shutil
+from itertools import zip_longest
 from pathlib import Path
 
 import pandas as pd
@@ -78,50 +80,69 @@ def describe_duration(days):
     return f"{days:,} days (~{days / 365.25:.1f} years)"
 
 
+def section(title, rows, width=None):
+    """A titled block of aligned 'label  value' lines."""
+    width = width or max(len(label) for label, _ in rows)
+    return [title] + [f"{label:<{width}}  {value}" for label, value in rows]
+
+
 def show(row, f107_81d):
     reentered = pd.notna(row["DECAY_DATE"])
     launch = row["LAUNCH_DATE"]
+    where = ORBIT_TYPES.get(row["ORBIT_TYPE"], row["ORBIT_TYPE"])
 
-    print("\n" + "=" * 60)
-    print(f"  {row['OBJECT_NAME']}")
-    print("=" * 60)
-    print(f"  NORAD ID           {row['NORAD_CAT_ID']}")
-    print(f"  International ID   {row['OBJECT_ID']}")
-    print(f"  Type               {OBJECT_TYPES.get(row['OBJECT_TYPE'], row['OBJECT_TYPE'])}")
-    print(f"  Owner              {row['OWNER']}")
-    print(f"  Status             {OPS_STATUS.get(row['OPS_STATUS_CODE'], 'not listed')}")
-
-    print("\n  Launch")
-    print(f"    Date             {launch.date() if pd.notna(launch) else 'unknown'}")
-    print(f"    Site             {row['LAUNCH_SITE']}")
+    launch_rows = [("Date", launch.date() if pd.notna(launch) else "unknown"), ("Site", row["LAUNCH_SITE"])]
     if pd.notna(launch):
         known = f107_81d[:launch]
         if len(known):
-            print(f"    Solar flux       {known.iloc[-1]:.0f} sfu (81-day average at launch)")
+            launch_rows.append(("Solar flux", f"{known.iloc[-1]:.0f} sfu (81-day avg)"))
 
-    print("\n  Orbit (as stored in the catalog)")
-    if row["ORBIT_CENTER"] != "EA":
-        print(f"    Centre           {row['ORBIT_CENTER']} (not orbiting Earth)")
-    print(f"    Perigee          {fmt(row['PERIGEE'], ' km')}")
-    print(f"    Apogee           {fmt(row['APOGEE'], ' km')}")
-    print(f"    Inclination      {fmt(row['INCLINATION'], '°', 2)}")
-    print(f"    Period           {fmt(row['PERIOD'], ' min', 1)}")
+    if reentered:
+        life_rows = [("Reentered", f"{row['DECAY_DATE'].date()} ({where})")]
+        if pd.notna(launch):
+            life_rows.append(("In orbit", describe_duration((row["DECAY_DATE"] - launch).days)))
+    else:
+        life_rows = [("Status", f"still up ({where})")]
+        if pd.notna(launch):
+            life_rows.append(("So far", describe_duration((pd.Timestamp.today() - launch).days)))
+
+    orbit_rows = [
+        ("Perigee", fmt(row["PERIGEE"], " km")),
+        ("Apogee", fmt(row["APOGEE"], " km")),
+        ("Inclination", fmt(row["INCLINATION"], "°", 2)),
+        ("Period", fmt(row["PERIOD"], " min", 1)),
+    ]
     if pd.notna(row["PERIGEE"]) and pd.notna(row["APOGEE"]):
         ra, rp = row["APOGEE"] + R_EARTH, row["PERIGEE"] + R_EARTH
-        print(f"    Eccentricity     {(ra - rp) / (ra + rp):.4f}")
-    print(f"    Radar size (RCS) {fmt(row['RCS'], ' m²', 3)}")
+        orbit_rows.append(("Eccentricity", f"{(ra - rp) / (ra + rp):.4f}"))
+    orbit_rows.append(("Radar size", fmt(row["RCS"], " m²", 3)))
+    if row["ORBIT_CENTER"] != "EA":
+        orbit_rows.insert(0, ("Centre", f"{row['ORBIT_CENTER']} (not Earth)"))
 
-    print("\n  Lifetime")
-    if reentered:
-        print(f"    Reentered        {row['DECAY_DATE'].date()} ({ORBIT_TYPES.get(row['ORBIT_TYPE'], row['ORBIT_TYPE'])})")
-        if pd.notna(launch):
-            print(f"    Time in orbit    {describe_duration((row['DECAY_DATE'] - launch).days)}")
-        if pd.notna(row["PERIGEE"]) and row["PERIGEE"] < 250:
-            print("    Note             perigee under 250 km: probably its final orbit before reentry")
+    label_width = max(len(label) for label, _ in launch_rows + life_rows)
+    left = section("LAUNCH", launch_rows, label_width) + [""] + section("LIFETIME", life_rows, label_width)
+    right = section("ORBIT (catalog)", orbit_rows)
+
+    # Side by side if the terminal is wide enough, stacked otherwise.
+    term_width = shutil.get_terminal_size().columns
+    left_width = max(len(line) for line in left) + 6
+    if left_width + max(len(line) for line in right) < term_width - 2:
+        body = [f"{l:<{left_width}}{r}".rstrip() for l, r in zip_longest(left, right, fillvalue="")]
     else:
-        print(f"    Still up         yes ({ORBIT_TYPES.get(row['ORBIT_TYPE'], row['ORBIT_TYPE'])})")
-        if pd.notna(launch):
-            print(f"    Time so far      {describe_duration((pd.Timestamp.today() - launch).days)}")
+        body = left + [""] + right
+
+    summary = [OBJECT_TYPES.get(row["OBJECT_TYPE"], row["OBJECT_TYPE"]), f"owner {row['OWNER']}"]
+    if row["OPS_STATUS_CODE"] in OPS_STATUS:
+        summary.append(OPS_STATUS[row["OPS_STATUS_CODE"]])
+    summary += [f"NORAD {row['NORAD_CAT_ID']}", row["OBJECT_ID"]]
+
+    rule_width = min(term_width - 1, 80)
+    print(f"\n== {row['OBJECT_NAME']} " + "=" * max(0, rule_width - len(row["OBJECT_NAME"]) - 4))
+    print(" " + " · ".join(summary) + "\n")
+    for line in body:
+        print(" " + line)
+    if reentered and pd.notna(row["PERIGEE"]) and row["PERIGEE"] < 250:
+        print("\n Note: perigee under 250 km, so this is probably its final orbit before reentry.")
     print()
 
 
@@ -141,10 +162,17 @@ def main():
             print(f"No objects match '{query}'.")
             continue
 
-        row = matches.iloc[0] if len(matches) == 1 else choose(matches)
+        exact = matches[matches["rank"] == 0] if "rank" in matches else matches
+        if len(exact) == 1:
+            row = exact.iloc[0]
+        else:
+            row = matches.iloc[0] if len(matches) == 1 else choose(matches)
         if row is not None:
             show(row, f107_81d)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (EOFError, KeyboardInterrupt):  # Ctrl+Z / Ctrl+C
+        print()
