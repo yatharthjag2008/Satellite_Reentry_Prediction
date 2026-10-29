@@ -3,3 +3,6 @@ __pycache__/
 .ipynb_checkpoints/
 data/snapshots/
 data/collect_log.txt
+.env
+data/spacetrack/
+models/
