@@ -51,6 +51,33 @@ def orbit_averaged_rates(a_km, e, B, density, n_points=32):
     return da * SECONDS_PER_DAY / 1e3, de * SECONDS_PER_DAY
 
 
+def points_needed(a_km, e, scale_height=40.0):
+    """Sample points per orbit for the orbit average to converge.
+
+    Density near perigee falls off like exp(-a e (1 - cos E) / H), a bump of width
+    about sqrt(2H / (a e)) in E. Sampling a few points across that bump is enough,
+    so near-circular orbits need 8 points and very stretched ones a few hundred.
+    """
+    z = np.asarray(a_km) * np.asarray(e) / scale_height
+    n = 6 * np.pi * np.sqrt(z / 2) + 1
+    return np.clip(2 ** np.ceil(np.log2(n)), 8, 1024).astype(int)
+
+
+def drag_rates(a_km, e, B, density):
+    """Orbit-averaged rates, using as many sample points as each orbit needs.
+
+    density(h_km, rows) gives density for the objects in positions `rows` of the inputs.
+    """
+    a_km, e, B = np.broadcast_arrays(*[np.atleast_1d(np.asarray(x, float)) for x in (a_km, e, B)])
+    da, de = np.empty_like(a_km), np.empty_like(a_km)
+    n = points_needed(a_km, e)
+    for count in np.unique(n):
+        rows = np.flatnonzero(n == count)
+        da[rows], de[rows] = orbit_averaged_rates(a_km[rows], e[rows], B[rows],
+                                                  lambda h: density(h, rows), n_points=count)
+    return da, de
+
+
 def propagate(a_km, e, B, density, max_days=3650.0, stop_altitude=120.0, max_step=30.0, step_km=3.0):
     """Days until each orbit decays, integrating the orbit-averaged rates with RK4.
 
@@ -59,8 +86,8 @@ def propagate(a_km, e, B, density, max_days=3650.0, stop_altitude=120.0, max_ste
         inputs, h_km of shape (len(idx), points)) at t_days after the start.
     Reentry is when the apogee sinks to stop_altitude (the whole orbit is then in
     dense air and the rest takes hours), or the perigee drops below 90 km.
-    Each step lowers the semi-major axis by at most about step_km and lasts at most
-    max_step days. Objects still up after max_days get NaN.
+    Each step lowers the perigee by at most about step_km, shrinks the orbit by at
+    most 2%, and lasts at most max_step days. Objects still up after max_days get NaN.
     """
     a = np.array(a_km, dtype=float, ndmin=1)
     ecc = np.broadcast_to(np.asarray(e, float), a.shape).copy()
@@ -70,7 +97,7 @@ def propagate(a_km, e, B, density, max_days=3650.0, stop_altitude=120.0, max_ste
     active = np.arange(len(a))
 
     def rates(idx, a_, e_, t_):
-        return orbit_averaged_rates(a_, e_, B[idx], lambda h: density(h, idx, t_[:, None]))
+        return drag_rates(a_, e_, B[idx], lambda h, rows: density(h, idx[rows], t_[rows, None]))
 
     def fallen(a_, e_):
         return (a_ * (1 + e_) - R_EARTH <= stop_altitude) | (a_ * (1 - e_) - R_EARTH <= 90.0)
@@ -81,7 +108,10 @@ def propagate(a_km, e, B, density, max_days=3650.0, stop_altitude=120.0, max_ste
     while len(active):
         a0, e0, t0 = a[active], ecc[active], t[active]
         k1 = rates(active, a0, e0, t0)
-        dt = np.minimum(max_step, step_km / np.maximum(-k1[0], 1e-12))
+        perigee_rate = (1 - e0) * k1[0] - a0 * k1[1]
+        dt = np.minimum.reduce([np.full_like(a0, max_step),
+                                step_km / np.maximum(-perigee_rate, 1e-12),
+                                0.02 * a0 / np.maximum(-k1[0], 1e-12)])
         dt = np.minimum(dt, max_days - t0)
         k2 = rates(active, a0 + dt / 2 * k1[0], e0 + dt / 2 * k1[1], t0 + dt / 2)
         k3 = rates(active, a0 + dt / 2 * k2[0], e0 + dt / 2 * k2[1], t0 + dt / 2)

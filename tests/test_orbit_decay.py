@@ -3,7 +3,8 @@ import pytest
 from scipy.integrate import solve_ivp
 
 from atmosphere import ExponentialAtmosphere
-from orbit_decay import R_EARTH, circular_decay_rate, exponential_lifetime, orbit_averaged_rates, propagate
+from orbit_decay import (R_EARTH, circular_decay_rate, drag_rates, exponential_lifetime, orbit_averaged_rates,
+                         points_needed, propagate)
 
 ATM = ExponentialAtmosphere(rho0=3.7e-12, h0=400.0, scale_height=60.0)
 B = 0.01  # m^2/kg, typical of a small satellite
@@ -91,3 +92,19 @@ def test_eccentric_orbit_lasts_longer_than_circular_at_same_perigee():
     e = np.array([0.0, (a[1] - rp) / a[1]])
     days = propagate(a, e, B, exponential(ATM), max_days=1e6)
     assert days[1] > days[0]
+
+
+def test_points_needed_grows_with_eccentricity():
+    n = points_needed(np.array([R_EARTH + 400, R_EARTH + 400, 24000.0]), np.array([0.0, 0.01, 0.73]))
+    assert n[0] == 8 and n[0] <= n[1] < n[2] and n[2] >= 256
+
+
+def test_drag_rates_converge_for_a_transfer_orbit():
+    # Rocket body in a geostationary transfer orbit: perigee 200 km, apogee 35,786 km.
+    rp, ra = R_EARTH + 200.0, R_EARTH + 35786.0
+    a, e = (rp + ra) / 2, (ra - rp) / (ra + rp)
+    density = lambda h, rows: ATM.density(h)
+    auto = drag_rates(a, e, B, density)
+    fine = orbit_averaged_rates(a, e, B, ATM.density, n_points=8192)
+    assert auto[0][0] == pytest.approx(fine[0], rel=1e-4)
+    assert auto[1][0] == pytest.approx(fine[1], rel=1e-4)
