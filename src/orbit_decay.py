@@ -69,6 +69,7 @@ def drag_rates(a_km, e, B, density):
     density(h_km, rows) gives density for the objects in positions `rows` of the inputs.
     """
     a_km, e, B = np.broadcast_arrays(*[np.atleast_1d(np.asarray(x, float)) for x in (a_km, e, B)])
+    e = np.clip(e, 0.0, 0.99)  # an RK4 half-step can overshoot a nearly circular orbit below zero
     da, de = np.empty_like(a_km), np.empty_like(a_km)
     n = points_needed(a_km, e)
     for count in np.unique(n):
