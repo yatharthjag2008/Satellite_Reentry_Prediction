@@ -151,3 +151,11 @@ Part 1 predicts the whole lifetime from an object's first weeks in orbit. The ph
 ## 9. What the model leaves out: the Moon and the Sun
 
 Everything above treats drag as the only force that changes the orbit's size and shape. For near-circular orbits that's an excellent approximation. For **transfer orbits** (perigee ~200 km, apogee up to 36,000 km, typical of rocket bodies that put satellites on their way to geostationary orbit), it isn't. Near apogee the object is far enough out that the Moon's and Sun's gravity pull on it noticeably, and over months that slowly raises or lowers the perigee by tens of kilometers. Because drag depends exponentially on perigee height, such a change can shorten or lengthen the lifetime several times over. Modeling it means following the orbit's orientation relative to the Moon and Sun (lunisolar perturbations), which this project doesn't do; Part 1 therefore reports transfer orbits separately, and the hybrid can learn part of the effect from the apogee and inclination.
+
+## References
+
+- D. A. Vallado, *Fundamentals of Astrodynamics and Applications*, 4th ed., Microcosm Press, 2013: the drag acceleration, Gauss's variational equations and orbital decay (chapters 8–9).
+- D. G. King-Hele, *Satellite Orbits in an Atmosphere: Theory and Applications*, Blackie, 1987: orbit-averaged decay, why the apogee falls first, and lifetime estimates in an exponential atmosphere.
+- J. T. Emmert et al., "NRLMSIS 2.0: A whole-atmosphere empirical model of temperature and neutral species densities", *Earth and Space Science*, 8, 2021, with the 2.1 update; used through [pymsis](https://github.com/SWxTREC/pymsis).
+- F. R. Hoots and R. L. Roehrich, *Spacetrack Report No. 3: Models for Propagation of NORAD Element Sets*, 1980: what the mean motion, B* and mean motion derivative in each orbit record mean.
+- V. Vovk, A. Gammerman and G. Shafer, *Algorithmic Learning in a Random World*, Springer, 2005, and Y. Romano, E. Patterson and E. Candès, "Conformalized Quantile Regression", *NeurIPS*, 2019: the conformal prediction ranges in `uncertainty.py`.
