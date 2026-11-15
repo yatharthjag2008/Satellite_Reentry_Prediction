@@ -64,3 +64,23 @@ By object type: debris and rocket bodies 17% (XGBoost 19%, physics 23%), payload
 | Average of the three ML models | 19% | 17% | 26% | 22% | 22% | 55% |
 
 **Conclusion:** how the physics is combined matters more than whether it's used. Given the physics prediction as just another input, XGBoost mostly ignores it (23%, same as without). Learning a *correction* to the physics works, but only if the correction is kept simple: deep trees overfit the residuals and wreck good physics predictions at 1–3 months (28% vs 16%), while shallow, regularized trees keep them and fix the far horizon (17% vs 26%). The shallow residual hybrid is better than every other option in every horizon but one.
+
+## 006: Tuning the hybrid (validation year)
+
+**Setup:** `experiments.py hybrid_tuning`. Grid over tree depth (2, 3, 4, 6), min_child_weight (50, 500) and 400 trees × 0.05 vs 1,000 trees × 0.02, all with L2 regularization 10.
+
+**Result:** every setting with depth 3–6 scores 17% overall and 67–69% within 25%; depth 2 scores 18%. The setting from experiment 005 (depth 4, min_child_weight 50, 400 trees) is among the best and is kept.
+
+**Conclusion:** the gain comes from regularization (min_child_weight and L2), not from a lucky depth. The result is not sensitive to the exact settings, which makes it more believable.
+
+## 007: Tuning plain XGBoost the same way (validation year)
+
+**Setup:** `experiments.py xgboost_tuning`. The default XGBoost (depth 8, no regularization) against depth 3/4/6 with min_child_weight 50/500 and L2 10.
+
+| XGBoost | < 1 week | 1–4 weeks | 1–3 months | 3–12 months | Overall | Within 25% |
+|---|---|---|---|---|---|---|
+| Default (depth 8) | 17% | 16% | 25% | 23% | 23% | 55% |
+| **Depth 3, min_child_weight 50** | 20% | 14% | 20% | 18% | **18%** | 66% |
+| Shallow hybrid (from 005) | 17% | 12% | 16% | 17% | **17%** | **69%** |
+
+**Conclusion:** an important correction to experiments 001 and 005. Plain XGBoost was overfitting too, and regularizing it cuts its error from 23% to 18%. So most of the hybrid's apparent advantage was really "regularized vs. not". Against a fairly tuned baseline the physics still helps, but less: 1 point overall, 3 points within 25%, and 4 points at 1–3 months (16% vs 20%), where the drag simulation is most reliable. Both tuned settings are now the defaults in `train_reentry_model.py`.
