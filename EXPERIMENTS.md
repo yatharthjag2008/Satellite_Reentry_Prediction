@@ -22,3 +22,29 @@ Numbered experiments on predicting days until reentry. Each entry records what c
 **Result:** 23% of far-out predictions are badly low. Starlink is 35% of those rows but 56% of the badly low ones (37% of Starlink rows are badly low, against 10% for debris and rocket bodies). The badly low rows have a median 81-day solar flux of 197, against 163 for all far-out rows, and only 2% of training rows have solar flux that high.
 
 **Conclusion:** two causes. (1) Satellites that steer, mainly Starlink, sit at a fixed altitude and then get lowered on the operator's schedule, which no orbit-based model can see coming. (2) 2024–2025 was a strong solar maximum, and the model learned "high flux now → fast decay", which overstates decay when the flux drops over the following months. A physics model that holds today's space weather fixed would make the same mistake, so the forecast of future solar flux matters (tested in a later experiment).
+
+## 003: Physics model alone
+
+**Setup:** `physics_model.py`. For each object and day, fit B by least squares over the past 30 days of orbits (derivation section 6), then simulate forward with global-average NRLMSIS 2.1 density, holding the latest 81-day solar flux and 7-day Ap fixed. Simulated one orbit a week per object (541,031 orbits, about 7 minutes). Where the physics has no answer (B ≤ 0, too few orbits, or more than 10 years), it falls back to 365 days. All models in this and later experiments are scored on the same weekly rows; on these rows XGBoost scores 23% rather than 26%.
+
+| Model | < 1 week | 1–4 weeks | 1–3 months | 3–12 months | Overall | Within 25% |
+|---|---|---|---|---|---|---|
+| Physics | 22% | 17% | 21% | 25% | 24% | 52% |
+| XGBoost | 18% | 20% | 22% | 24% | 23% | 53% |
+| Gaussian process | 24% | 18% | 25% | 23% | 23% | 54% |
+
+The physics has its own answer for 71% of test rows. On those rows its median error is 20%, and on payloads other than Starlink it is **14%, better than every ML model**. It is worst on Starlink (49%), where the fitted B is near zero or negative because the satellites hold their altitude.
+
+**Conclusion:** with no training at all, a drag simulation plus one fitted number per object matches XGBoost trained on 336,000 rows. Where the physics fails, it fails for a clear reason (thrusters), which tells the hybrid where to step in.
+
+## 004: Physics + ML hybrid
+
+**Setup:** XGBoost (same settings) trained on log10(actual / physics), with the 19 usual features plus log10(physics days), log10(B) and the number of orbits in the fit. Prediction = physics × 10^(correction).
+
+| Model | < 1 week | 1–4 weeks | 1–3 months | 3–12 months | Overall | Within 25% |
+|---|---|---|---|---|---|---|
+| Hybrid | 22% | 22% | 23% | **22%** | **22%** | **54%** |
+
+By object type: debris and rocket bodies 17% (XGBoost 19%, physics 23%), payloads 15%, Starlink 38%. The physics prediction is by far the hybrid's most used input (importance 0.34, next 0.09).
+
+**Conclusion:** the hybrid is the best overall and on debris, but only by 1–2 points, and it is worse than XGBoost in the final week and worse than the physics alone on payloads (14%). The residual model seems to be undoing good physics predictions as often as fixing bad ones. Next: regularize the hybrid and check whether simply averaging models helps.
