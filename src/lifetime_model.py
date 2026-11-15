@@ -31,6 +31,7 @@ OUT_FILE = DATA_DIR / "spacetrack" / "lifetime_predictions.parquet"
 FIT_FROM, FIT_TO = 10, 40  # days after launch: deployment and early maneuvers are mostly over by day 10
 MAX_YEARS = 30
 MAX_MONTHS = MAX_YEARS * 12 + 2
+TRANSFER_APOGEE = 5000  # km: above this, the Moon's and Sun's pull on the perigee matters (docs/derivation.md 9)
 LIFETIME_BANDS = [(0, 365, "under 1 year"), (365, 3 * 365, "1-3 years"), (3 * 365, 10 * 365, "3-10 years"),
                   (10 * 365, np.inf, "10+ years")]
 
@@ -97,6 +98,18 @@ def simulate(table, flux, ap, atm):
     return days
 
 
+def object_groups(table):
+    """Rocket bodies and satellites split by orbit shape, plus Starlink."""
+    rocket = (table["OBJECT_TYPE"] == "R/B").to_numpy()
+    starlink = (table["is_starlink"] == 1).to_numpy()
+    transfer = (table["APOAPSIS"] > TRANSFER_APOGEE).to_numpy()
+    return {"all objects": np.ones(len(table), bool),
+            "rocket bodies, near-circular": rocket & ~transfer,
+            "rocket bodies, transfer orbits": rocket & transfer,
+            "satellites (not Starlink), near-circular": ~rocket & ~starlink & ~transfer,
+            "Starlink": starlink}
+
+
 def error_by_band(table, predictions):
     truth = table["days_left"].to_numpy()
     rows = {}
@@ -122,11 +135,8 @@ def main():
     table.to_parquet(OUT_FILE, index=False)
 
     usable = (table["B_fit"] > 0).to_numpy()
-    groups = {"all with a fitted B": usable,
-              "rocket bodies": usable & (table["OBJECT_TYPE"] == "R/B").to_numpy(),
-              "satellites (not Starlink)": usable & (table["OBJECT_TYPE"] == "PAY").to_numpy()
-              & (table["is_starlink"] == 0).to_numpy()}
-    for group, mask in groups.items():
+    for group, mask in object_groups(table).items():
+        mask = mask & usable
         print(f"\n{group} ({mask.sum():,} objects): median error by true remaining lifetime")
         print(error_by_band(table[mask], {k: v[mask] for k, v in predictions.items()})
               .to_string(float_format="{:.0%}".format))
