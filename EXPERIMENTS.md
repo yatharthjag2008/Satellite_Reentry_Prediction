@@ -209,3 +209,25 @@ The seasonal cycle helps in the final month (19% vs 22%, 14% vs 17%) but not fur
 A 4-day window does about as well as 8 days; 2 days gets worse further out, and 1 day often has too few orbits to fit.
 
 **Conclusion:** experiment 014 found that a short window is noise far from reentry, but near the end the orbit sinks kilometers per day, so a few days of tracking measure B precisely and capture recent changes (tumbling, attitude) that a 30-day average blurs. With fresh orbits and an 8-day B, the physics model **beats the official prediction from 4+ days out by 28%** and comes within 1.2× of it at 2–4 days. In the final day the official forecast, with dense radar tracking and higher-fidelity models, stays far ahead. The hybrid hurts here, since its correction was learned from one-orbit-a-week rows and almost never saw the last hours. So the live tool now uses the short-window physics close to reentry.
+
+## 016: What the hybrid learned to correct
+
+**Setup:** `experiments.py hybrid_corrections`. On test rows where the physics has an answer, compare the correction the hybrid applies (its predicted actual/physics factor) with the factor that was actually needed, grouped three ways. See `results/hybrid_corrections.png`.
+
+| Condition | Needed | Learned |
+|---|---|---|
+| Solar flux 100–190 | 0.98–1.03 | 0.99 |
+| Solar flux above 190 | 1.18 | 1.15 |
+| Physics says under 7 days | 1.71 | 1.45 |
+| Physics says 7–30 days | 1.25 | 1.11 |
+| Physics says 90–365 days | 1.02 | 1.00 |
+| Physics says over a year | 0.55 | 0.55 |
+| Starlink | 1.52 | 1.15 |
+| Debris + rocket bodies, payloads | 1.01–1.03 | 1.00–1.04 |
+
+**Conclusion:** the hybrid leaves the physics alone where it's already right (moderate solar flux, passive objects) and corrects three specific weaknesses:
+1. **At the solar peak** (flux above 190) objects lived 18% longer than the physics said, because the flux fell over the following months. This is experiment 002's problem, now handled by a learned correction instead of a solar forecast.
+2. **In the final weeks** the physics is too short by a factor of 1.25–1.7. Part of this is the reentry definition (the simulation stops when the apogee reaches 120 km, while the catalog date can be up to a day later) and part is that the 30-day B lags behind a fast-changing final orbit (experiment 015).
+3. **Starlink** lives 1.5× longer than its drag suggests, because satellites keep holding altitude for a while. The hybrid only learns part of this (1.15×), as the timing is the operator's choice.
+
+The 0.55 for physics predictions over a year is partly an artifact: every row in the table is within a year of reentry, so a long physics prediction can only ever be too long. The hybrid learns that too, which is harmless here but means it shouldn't be used beyond a year (the lookup tool doesn't).
