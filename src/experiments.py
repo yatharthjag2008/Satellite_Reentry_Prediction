@@ -190,8 +190,39 @@ def drag_stability():
     print("\nimportance of the stability inputs:", importance[STABILITY_FEATURES].round(3).to_dict())
 
 
+def final_days_window():
+    """In the final days, is B better fitted over a short recent window, using every orbit?
+
+    Uses the official-comparison setup (compare_official.py --fresh). No training is
+    involved, so scoring on test objects is fair.
+    """
+    from compare_official import LEAD_BANDS, official_messages
+    from download_final_orbits import OUT_FILE as FINAL_ORBITS_FILE
+    from physics_model import fit_drag_parameter, forecast, prepare, unit_decay_rate
+    from predict_reentry import features
+
+    atm = MsisAtmosphere()
+    tip = official_messages()
+    orbits = prepare(features(pd.read_parquet(FINAL_ORBITS_FILE)))
+    g = unit_decay_rate(orbits, atm)
+    rows = {}
+    for window in (1, 2, 4, 8, 30):
+        orbits["B_w"] = fit_drag_parameter(orbits, g, window)[0]
+        m = pd.merge_asof(tip.sort_values("MSG_EPOCH"), orbits.sort_values("EPOCH"), left_on="MSG_EPOCH",
+                          right_on="EPOCH", by="NORAD_CAT_ID", direction="backward")
+        m = m[(m["MSG_EPOCH"] - m["EPOCH"]).dt.total_seconds() / 86400 <= 2].reset_index(drop=True)
+        days = forecast(m, m["B_w"].to_numpy(), atm)
+        hours = (m["EPOCH"] + pd.to_timedelta(np.nan_to_num(days, nan=365.0), unit="D") - m["reentry"]).abs()
+        hours = hours.dt.total_seconds() / 3600
+        rows[f"B over the last {window} days"] = {label: hours[(m["lead_days"] >= lo) & (m["lead_days"] < hi)].median()
+                                                 for lo, hi, label in LEAD_BANDS}
+    print("Median error (hours) of the physics prediction, by time before reentry")
+    print(pd.DataFrame(rows).T.to_string(float_format="{:.1f}".format))
+
+
 EXPERIMENTS = {"hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning, "xgboost_tuning": xgboost_tuning,
-               "solar_forecast": solar_forecast, "drag_stability": drag_stability}
+               "solar_forecast": solar_forecast, "drag_stability": drag_stability,
+               "final_days_window": final_days_window}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in EXPERIMENTS:
