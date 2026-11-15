@@ -18,7 +18,7 @@ import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 HISTORY_DIR = DATA_DIR / "spacetrack" / "reentry_history"
-OUT_FILE = DATA_DIR / "spacetrack" / "reentry_dataset.csv.gz"
+OUT_FILE = DATA_DIR / "spacetrack" / "reentry_dataset.parquet"
 R_EARTH = 6378.137  # km
 
 
@@ -85,7 +85,8 @@ def main():
             "PERIAPSIS", "APOAPSIS", "eccentricity", "INCLINATION", "MEAN_MOTION", "MEAN_MOTION_DOT", "BSTAR",
             "perigee_rate_7d", "apogee_rate_7d", "perigee_rate_30d", "apogee_rate_30d",
             "f107", "f107_81d", "ap", "ap_7d", "RCS", "is_starlink", "days_left"]
-    df[cols].to_csv(OUT_FILE, index=False, float_format="%.6g", compression="gzip")
+    # Parquet loads in a couple of seconds, versus about a minute for the same table as gzipped CSV.
+    df[cols].reset_index(drop=True).to_parquet(OUT_FILE, index=False)
     print(f"saved {len(df):,} rows to {OUT_FILE}")
     print(df[cols].describe().T[["count", "mean", "min", "max"]].round(3).to_string())
 

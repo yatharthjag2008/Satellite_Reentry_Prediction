@@ -28,7 +28,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import QuantileTransformer
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_FILE = ROOT / "data" / "spacetrack" / "reentry_dataset.csv.gz"
+DATA_FILE = ROOT / "data" / "spacetrack" / "reentry_dataset.parquet"
 RESULTS_DIR = ROOT / "results"
 MODELS_DIR = ROOT / "models"
 
@@ -42,7 +42,7 @@ HORIZONS = [(0, 7, "under 1 week"), (7, 30, "1-4 weeks"), (30, 90, "1-3 months")
 
 
 def load():
-    df = pd.read_csv(DATA_FILE, parse_dates=["EPOCH", "DECAY_DATE"])
+    df = pd.read_parquet(DATA_FILE)
     df["is_debris"] = (df["OBJECT_TYPE"] == "DEB").astype(int)
     df["is_rocket_body"] = (df["OBJECT_TYPE"] == "R/B").astype(int)
     train, test = df[df["DECAY_DATE"] < TEST_FROM], df[df["DECAY_DATE"] >= TEST_FROM]
