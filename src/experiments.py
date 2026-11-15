@@ -14,6 +14,11 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
+from atmosphere import MsisAtmosphere
+from build_reentry_dataset import DATA_DIR
+from orbit_decay import propagate
+from physics_model import semi_major_axis
+
 from train_reentry_model import (BASE_PARAMS, FEATURES, HORIZONS, HYBRID_FEATURES, UNTUNED_PARAMS, load,
                                  predict_hybrid, train_hybrid, train_xgboost)
 
@@ -109,7 +114,52 @@ def xgboost_tuning():
     show(scores(preds, truth).sort_values("overall"))
 
 
-EXPERIMENTS = {"hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning, "xgboost_tuning": xgboost_tuning}
+def solar_forecast(sample=5000):
+    """How much would a perfect forecast of solar and geomagnetic activity help the physics?
+
+    No training is involved, so this uses test rows directly: a random sample of
+    rows where the physics has a fitted drag parameter.
+    """
+    _, test = load(verbose=False)
+    rows = test[test["B_fit"] > 0].sample(sample, random_state=0).reset_index(drop=True)
+    truth = rows["days_left"].to_numpy()
+    a, e, B = semi_major_axis(rows["MEAN_MOTION"]), rows["eccentricity"].to_numpy(), rows["B_fit"].to_numpy()
+    atm = MsisAtmosphere()
+
+    sw = pd.read_csv(DATA_DIR / "SW-All.csv", parse_dates=["DATE"])
+    sw = sw.set_index("DATE")[["F10.7_OBS_CENTER81", "F10.7_OBS_LAST81", "AP_AVG"]].asfreq("D").ffill()
+    day0 = sw.index[0]
+    ap_daily = sw["AP_AVG"].to_numpy()
+    start = ((rows["EPOCH"] - day0).dt.total_seconds() / 86400).to_numpy()
+    doy0 = rows["EPOCH"].dt.day_of_year.to_numpy().astype(float)
+    f_now, ap_now = rows["f107_81d"].to_numpy(), rows["ap_7d"].to_numpy()
+
+    def run(density, max_step):
+        return propagate(a, e, B, density, max_days=3650, max_step=max_step)
+
+    def actual_weather(flux_column):
+        flux = sw[flux_column].to_numpy()
+
+        def density(h, idx, t):
+            day = np.clip((start[idx, None] + t).astype(int), 0, len(flux) - 1)
+            return atm.density(h, flux[day], ap_daily[day], (doy0[idx, None] + t) % 365.25)
+        return density
+
+    profile = atm.profile(f_now, ap_now)
+    preds = {
+        "today's weather held fixed, year-average season (baseline)": run(lambda h, idx, t: profile(h, idx), 30.0),
+        "today's weather held fixed, with the seasons":
+            run(lambda h, idx, t: atm.density(h, f_now[idx, None], ap_now[idx, None], (doy0[idx, None] + t) % 365.25), 5.0),
+        # B was fitted with the trailing 81-day flux, so a consistent forecast uses the same index.
+        "perfect forecast, centered 81-day flux": run(actual_weather("F10.7_OBS_CENTER81"), 2.0),
+        "perfect forecast, trailing 81-day flux (as in the fit)": run(actual_weather("F10.7_OBS_LAST81"), 2.0),
+    }
+    preds = {k: np.where(np.isfinite(v), v, 3650.0) for k, v in preds.items()}
+    show(scores(preds, truth))
+
+
+EXPERIMENTS = {"hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning, "xgboost_tuning": xgboost_tuning,
+               "solar_forecast": solar_forecast}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in EXPERIMENTS:
