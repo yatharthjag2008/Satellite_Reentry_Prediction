@@ -145,6 +145,15 @@ def solar_forecast(sample=5000):
             return atm.density(h, flux[day], ap_daily[day], (doy0[idx, None] + t) % 365.25)
         return density
 
+    def cycle_weather():
+        from solar_cycle import forecast_monthly
+
+        start = rows["EPOCH"].dt.to_period("M").dt.start_time
+        forecasts = {d: forecast_monthly(d, 122) for d in start.unique()}
+        flux = np.array([forecasts[d] for d in start])
+        return lambda h, idx, t: atm.density(
+            h, flux[idx[:, None], np.clip((t / 30.44).astype(int), 0, flux.shape[1] - 1)], ap_now[idx, None])
+
     profile = atm.profile(f_now, ap_now)
     preds = {
         "today's weather held fixed, year-average season (baseline)": run(lambda h, idx, t: profile(h, idx), 30.0),
@@ -153,6 +162,7 @@ def solar_forecast(sample=5000):
         # B was fitted with the trailing 81-day flux, so a consistent forecast uses the same index.
         "perfect forecast, centered 81-day flux": run(actual_weather("F10.7_OBS_CENTER81"), 2.0),
         "perfect forecast, trailing 81-day flux (as in the fit)": run(actual_weather("F10.7_OBS_LAST81"), 2.0),
+        "solar-cycle forecast (solar_cycle.py), Ap held fixed": run(cycle_weather(), 15.0),
     }
     preds = {k: np.where(np.isfinite(v), v, 3650.0) for k, v in preds.items()}
     show(scores(preds, truth))
