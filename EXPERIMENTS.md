@@ -122,3 +122,18 @@ By object type: debris and rocket bodies 17% (XGBoost 19%, physics 23%), payload
 | Starlink | 59% | 2.5× | 81% | 4.2× |
 
 **Conclusion:** conformal prediction guarantees 90% only if the future looks like the calibration data. For debris and rocket bodies it does, and coverage is exactly 90%. For Starlink it doesn't: 2024–2026 brought far more Starlink reentries, at higher solar activity, than 2023. CQR adapts better because its widths depend on each object's features (Starlink ranges are 4.2× wide against 2.3× for payloads), but still falls short. Next: recalibrate as time goes on, using only objects that had already reentered before each prediction.
+
+## 010: Rolling recalibration of the ranges
+
+**Setup:** same hybrid and scores as 009, but the range width is recalibrated every month from the objects that reentered in the previous 365 days (all already known at the time), separately for each object group (debris + rocket bodies, payloads, Starlink) and band of predicted days. Cells with fewer than 200 rows fall back to the band across all groups.
+
+| Test rows | Static Mondrian | **Rolling Mondrian** | Static CQR | Rolling CQR |
+|---|---|---|---|---|
+| Overall | 81% (2.5×) | **89% (2.5×)** | 86% (2.8×) | 88% (2.8×) |
+| Debris + rocket bodies | 90% (2.5×) | 90% (2.5×) | 90% (2.8×) | 89% (2.7×) |
+| Payloads | 94% (2.5×) | 89% (2.0×) | 88% (2.3×) | 87% (2.3×) |
+| Starlink | 59% (2.5×) | **88% (4.1×)** | 81% (4.2×) | 87% (4.4×) |
+
+(Each cell: share of ranges containing the truth, and the median ratio of the top of the range to the bottom.)
+
+**Conclusion:** keeping the calibration recent and per group almost restores the 90% target (89%) without making ranges wider on average: they get wider for Starlink (4.1×) and narrower for ordinary payloads (2.0×), which is where the uncertainty really is. The simpler Mondrian method does as well as CQR here, so the lookup tool uses it, calibrated on the latest year of reentries.
