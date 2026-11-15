@@ -152,3 +152,13 @@ By object type: debris and rocket bodies 17% (XGBoost 19%, physics 23%), payload
 (Median error in hours, and as a share of the time left.) The true reentry fell inside the official ± window for 84% of messages.
 
 **Conclusion:** in the final four days, the official predictions are 2–6 times more accurate. That isn't surprising: they use dense radar tracking right up to the message, while our latest orbit is typically 8–12 hours old (the training table keeps one orbit per day), which in the final day is about as long as the time left. Further out (4+ days) all four are equally good at about 30%. Among our models the physics is clearly best close to reentry; XGBoost, which never sees how density changes along the way, is poor. Next: give our models the same fresh orbits.
+
+## 012: Year-by-year backtest, 2005–2026
+
+**Setup:** `backtest.py`. For each year Y, train XGBoost and the hybrid (tuned settings) on every object that reentered before Y, and test on the objects that reentered during Y. The physics needs no training. This covers two full solar cycles.
+
+**Result:** median error over the 22 years: **hybrid 22%**, XGBoost 24%, physics 27%. The hybrid is best or tied in 20 of the 22 years (the exceptions are 2008 and 2022, by 1–2 points). See `results/backtest_by_year.png`.
+
+The physics alone is erratic: 18–27% in most years, but 42–48% in 2010–2011 and 2021. Those are exactly the years when solar activity **rose** out of a minimum. Holding today's low solar flux fixed then underestimates future drag, so the physics predicts lifetimes that are too long.
+
+**Conclusion:** the 2024+ test result (experiment 008) isn't a lucky period: the hybrid wins across quiet and active Suns. The physics model's weak point is the solar forecast, and the hybrid learns to correct it, because the training data contains earlier solar cycles. Next: measure how much a perfect solar forecast would help the physics.
