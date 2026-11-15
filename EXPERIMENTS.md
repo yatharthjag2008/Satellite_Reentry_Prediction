@@ -162,3 +162,20 @@ By object type: debris and rocket bodies 17% (XGBoost 19%, physics 23%), payload
 The physics alone is erratic: 18–27% in most years, but 42–48% in 2010–2011 and 2021. Those are exactly the years when solar activity **rose** out of a minimum. Holding today's low solar flux fixed then underestimates future drag, so the physics predicts lifetimes that are too long.
 
 **Conclusion:** the 2024+ test result (experiment 008) isn't a lucky period: the hybrid wins across quiet and active Suns. The physics model's weak point is the solar forecast, and the hybrid learns to correct it, because the training data contains earlier solar cycles. Next: measure how much a perfect solar forecast would help the physics.
+
+## 013: How much would a perfect solar forecast help the physics?
+
+**Setup:** `experiments.py solar_forecast`. 5,000 random test rows where the physics has a fitted B. The same fitted B and starting orbit, with four assumptions about the future atmosphere. No training is involved, so test rows are fair to use.
+
+| Future weather | < 1 week | 1–4 weeks | 1–3 months | 3–12 months | Overall | Within 25% |
+|---|---|---|---|---|---|---|
+| Today's held fixed, year-average season (baseline) | 22% | 17% | 18% | 27% | 24% | 51% |
+| Today's held fixed, with the seasons | 19% | 14% | 20% | 29% | 25% | 50% |
+| Perfect forecast, centered 81-day flux | 22% | 17% | 20% | 27% | 24% | 51% |
+| Perfect forecast, trailing 81-day flux | **19%** | **13%** | 19% | **24%** | **22%** | **54%** |
+
+**Conclusion:** two lessons.
+1. **The forecast has to match how B was fitted.** B was fitted using the trailing 81-day flux. Switching to the "better" centered flux for the forecast gains nothing, because B has already absorbed the lag between the two. Used consistently, the perfect forecast helps.
+2. **Even a perfect forecast only improves the physics from 24% to 22%.** In 2024–2026 the main error isn't the weather but B itself: satellites change their attitude, raise their orbits, or start tumbling, so the drag measured over the past month doesn't hold for the coming months. That's the part the hybrid learns to correct, and it suggests a good solar forecast is worth less than better handling of B (for example, how much B varied over the fit window).
+
+The seasonal cycle helps in the final month (19% vs 22%, 14% vs 17%) but not further out, so the baseline keeps the year-average density.
