@@ -141,6 +141,24 @@ def plot_predictions(truth, predictions, path):
     plt.close(fig)
 
 
+def plot_error_by_horizon(predictions, truth, path):
+    """Grouped bars: median error of each model in each horizon (the rule of thumb is off the chart)."""
+    shown = {k: v for k, v in predictions.items() if k not in ("rule of thumb", "linear regression")}
+    labels = [label for _, _, label in HORIZONS]
+    width = 0.8 / len(shown)
+    fig, ax = plt.subplots(figsize=(10, 4.5))
+    for i, (name, pred) in enumerate(shown.items()):
+        err = np.abs(pred / truth - 1)
+        values = [100 * np.median(err[(truth >= lo) & (truth < hi)]) for lo, hi, _ in HORIZONS]
+        ax.bar(np.arange(len(labels)) + (i - (len(shown) - 1) / 2) * width, values, width, label=name)
+    ax.set_xticks(np.arange(len(labels)), [f"{label} left" for label in labels])
+    ax.set(ylabel="median error (%)", title="Error by time left until reentry (test set: reentries from 2024 on)")
+    ax.set_ylim(0, ax.get_ylim()[1] * 1.25)  # room for the legend above the bars
+    ax.legend(ncol=len(shown), loc="upper center")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
     RESULTS_DIR.mkdir(exist_ok=True)
     MODELS_DIR.mkdir(exist_ok=True)
@@ -207,6 +225,7 @@ def main():
 
     shown = {k: predictions[k] for k in ("physics", "XGBoost", "physics + ML hybrid")}
     plot_predictions(truth, shown, RESULTS_DIR / "predicted_vs_actual.png")
+    plot_error_by_horizon(predictions, truth, RESULTS_DIR / "error_by_horizon.png")
     booster.save_model(MODELS_DIR / "reentry_xgb.json")
     hybrid.save_model(MODELS_DIR / "reentry_hybrid.json")
     print(f"\nsaved results to {RESULTS_DIR} and models to {MODELS_DIR}")
