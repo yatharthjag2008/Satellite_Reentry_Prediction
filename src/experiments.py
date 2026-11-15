@@ -73,7 +73,27 @@ def hybrid_variants():
     show(scores(preds, truth))
 
 
-EXPERIMENTS = {"hybrid_variants": hybrid_variants}
+def hybrid_tuning():
+    """Small grid over how simple the hybrid's correction trees are."""
+    fit, val = validation_split()
+    truth = val["days_left"].to_numpy()
+    residual = np.log10(fit["days_left"] / fit["physics_filled"])
+    physics = val["physics_filled"].to_numpy()
+    preds = {}
+    for depth in (2, 3, 4, 6):
+        for min_child in (50, 500):
+            for trees, rate in ((400, 0.05), (1000, 0.02)):
+                params = {**XGB_PARAMS, "max_depth": depth, "min_child_weight": min_child, "reg_lambda": 10.0,
+                          "n_estimators": trees, "learning_rate": rate}
+                model = xgb.XGBRegressor(**params).fit(fit[HYBRID_FEATURES], residual)
+                name = f"depth {depth}, min_child {min_child}, {trees} trees x {rate}"
+                preds[name] = physics * 10 ** model.predict(val[HYBRID_FEATURES])
+                print(f"{name}: {np.median(np.abs(preds[name] / truth - 1)):.1%}")
+    print()
+    show(scores(preds, truth).sort_values("overall"))
+
+
+EXPERIMENTS = {"hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in EXPERIMENTS:
