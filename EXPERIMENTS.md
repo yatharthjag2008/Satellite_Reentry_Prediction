@@ -84,3 +84,24 @@ By object type: debris and rocket bodies 17% (XGBoost 19%, physics 23%), payload
 | Shallow hybrid (from 005) | 17% | 12% | 16% | 17% | **17%** | **69%** |
 
 **Conclusion:** an important correction to experiments 001 and 005. Plain XGBoost was overfitting too, and regularizing it cuts its error from 23% to 18%. So most of the hybrid's apparent advantage was really "regularized vs. not". Against a fairly tuned baseline the physics still helps, but less: 1 point overall, 3 points within 25%, and 4 points at 1–3 months (16% vs 20%), where the drag simulation is most reliable. Both tuned settings are now the defaults in `train_reentry_model.py`.
+
+## 008: Final test of the tuned models
+
+**Setup:** the settings chosen on the validation year (006–007), retrained on every object that reentered before 2024 and scored once on the 4,897 test objects that reentered from 2024 on.
+
+| Model | < 1 week | 1–4 weeks | 1–3 months | 3–12 months | Overall | Within 25% |
+|---|---|---|---|---|---|---|
+| Rule of thumb | 522% | 389% | 395% | 444% | 427% | 7% |
+| Physics | 22% | 17% | 21% | 25% | 24% | 52% |
+| Linear regression | 164% | 38% | 27% | 37% | 36% | 35% |
+| XGBoost (tuned) | 27% | **15%** | 19% | 19% | 19% | 63% |
+| Gaussian process | 24% | 18% | 25% | 23% | 23% | 54% |
+| **Physics + ML hybrid (tuned)** | **21%** | 16% | **18%** | **16%** | **16%** | **67%** |
+
+| Object type | Physics | XGBoost | Hybrid |
+|---|---|---|---|
+| Debris + rocket bodies | 23% | 17% | **15%** |
+| Payloads (not Starlink) | 14% | 14% | **11%** |
+| Starlink | 49% | 29% | **28%** |
+
+**Conclusion:** the validation-year ranking held on the test set. The hybrid is the best model overall and for every object type, and its 16% compares with 26% for the original XGBoost (experiment 001). The tuned XGBoost is weak in the final week (27%), where the physics carries the hybrid. Starlink is still the hardest case, as expected for satellites whose reentry is chosen by the operator.
