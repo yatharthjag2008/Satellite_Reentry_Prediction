@@ -137,3 +137,18 @@ By object type: debris and rocket bodies 17% (XGBoost 19%, physics 23%), payload
 (Each cell: share of ranges containing the truth, and the median ratio of the top of the range to the bottom.)
 
 **Conclusion:** keeping the calibration recent and per group almost restores the 90% target (89%) without making ranges wider on average: they get wider for Starlink (4.1×) and narrower for ordinary payloads (2.0×), which is where the uncertainty really is. The simpler Mondrian method does as well as CQR here, so the lookup tool uses it, calibrated on the latest year of reentries.
+
+## 011: Against the official US Space Force predictions
+
+**Setup:** `compare_official.py`. Space-Track's TIP messages give the official predicted reentry time, issued at a known moment, for objects in their final days: 10,647 messages for 1,941 test objects. For each message, our models predict from our latest orbit before it (9,779 messages have one within 2 days). The truth is each object's final TIP message, issued after reentry.
+
+| Made before reentry | Messages | Our orbit's age | Official | Physics | XGBoost | Hybrid |
+|---|---|---|---|---|---|---|
+| Under 1 day | 5,246 | 11.9 h | **0.7 h (8%)** | 4.1 h (51%) | 13.2 h (179%) | 6.0 h (83%) |
+| 1–2 days | 1,666 | 9.6 h | **3.6 h (10%)** | 9.0 h (25%) | 27.1 h (71%) | 9.7 h (27%) |
+| 2–4 days | 2,372 | 8.1 h | **7.7 h (11%)** | 13.6 h (20%) | 36.6 h (53%) | 15.5 h (23%) |
+| 4+ days | 489 | 9.9 h | 36.4 h (30%) | 37.3 h (30%) | 39.7 h (29%) | 41.7 h (32%) |
+
+(Median error in hours, and as a share of the time left.) The true reentry fell inside the official ± window for 84% of messages.
+
+**Conclusion:** in the final four days, the official predictions are 2–6 times more accurate. That isn't surprising: they use dense radar tracking right up to the message, while our latest orbit is typically 8–12 hours old (the training table keeps one orbit per day), which in the final day is about as long as the time left. Further out (4+ days) all four are equally good at about 30%. Among our models the physics is clearly best close to reentry; XGBoost, which never sees how density changes along the way, is poor. Next: give our models the same fresh orbits.
