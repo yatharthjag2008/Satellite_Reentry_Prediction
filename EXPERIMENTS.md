@@ -1,6 +1,28 @@
 # Experiment log
 
-Numbered experiments on predicting days until reentry. Each entry records what changed, what happened and what I concluded. Unless noted, models train on objects that reentered before 2024-01-01 and are tested on objects that reentered from 2024-01-01 onward, and errors are the median of |predicted / actual − 1|.
+Numbered experiments on predicting reentry. Each entry records what changed, what happened and what I concluded. Unless noted (Part 1 is experiments 017–019), models train on objects that reentered before 2024-01-01 and are tested on objects that reentered from 2024-01-01 onward, and errors are the median of |predicted / actual − 1|.
+
+| # | Question | Answer in one line |
+|---|---|---|
+| [001](#001-baseline-models) | How good are standard ML models? | XGBoost 26%, Gaussian process 22%; rule of thumb 430% |
+| [002](#002-where-xgboost-goes-badly-low) | Where does XGBoost go wrong? | Starlink and the 2024–25 solar peak |
+| [003](#003-physics-model-alone) | How good is the drag simulation alone? | 24%, with no training at all; 14% on payloads |
+| [004](#004-physics--ml-hybrid) | Does a physics + ML hybrid help? | Slightly (22%), with default settings |
+| [005](#005-ways-to-combine-physics-and-ml-validation-year) | How should physics and ML be combined? | Learn a simple correction to the physics |
+| [006](#006-tuning-the-hybrid-validation-year) | How sensitive is the hybrid to its settings? | Not much: regularization is what matters |
+| [007](#007-tuning-plain-xgboost-the-same-way-validation-year) | Is the baseline fairly tuned? | It wasn't; tuned, XGBoost improves to 18% |
+| [008](#008-final-test-of-the-tuned-models) | Final test | Hybrid 16%, XGBoost 19%, physics 24% |
+| [009](#009-conformal-90-ranges-calibrated-on-2023) | Are 90% ranges reliable? | Only 81%: the population changed |
+| [010](#010-rolling-recalibration-of-the-ranges) | Can recalibration fix that? | Yes: 89%, Starlink from 59% to 88% |
+| [011](#011-against-the-official-us-space-force-predictions) | How do we compare with official forecasts? | Equal from 4+ days out, worse close in |
+| [012](#012-year-by-year-backtest-20052026) | Does it hold across solar cycles? | Hybrid best in 20 of 22 years |
+| [013](#013-how-much-would-a-perfect-solar-forecast-help-the-physics) | Is the solar forecast the bottleneck? | No: a perfect one gains 2 points |
+| [014](#014-which-window-to-fit-b-over-and-does-drag-stability-help) | What fit window for B? | 30 days; shorter is noise far out |
+| [015](#015-fresh-orbits-and-a-short-fit-window-in-the-final-days) | Can fresh orbits close the gap with official forecasts? | Beats them 4+ days out; 8-day B near the end |
+| [016](#016-what-the-hybrid-learned-to-correct) | What does the hybrid correct? | Solar peak, final weeks and Starlink |
+| [017](#017-part-1-physics-from-the-first-40-days-to-reentry) | Lifetime from the first 40 days? | 29% with a solar-cycle forecast (84% without) |
+| [018](#018-part-1-physics-vs-ml-vs-hybrid) | Does ML help for lifetimes? | Seems to (26%) under cross-validation by launch... |
+| [019](#019-part-1-with-a-fair-time-split) | ...and on a later period? | No: physics 35%, ML 55–69% |
 
 ## 001: Baseline models
 
