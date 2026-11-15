@@ -129,7 +129,8 @@ def propagate(a_km, e, B, density, max_days=3650.0, stop_altitude=120.0, max_ste
     active = np.arange(len(a))
 
     def rates(idx, a_, e_, t_):
-        return drag_rates(a_, e_, B[idx], lambda h, rows: density(h, idx[rows], t_[rows, None]))
+        with np.errstate(invalid="ignore"):  # overshooting stages give NaN; fallen() catches them
+            return drag_rates(a_, e_, B[idx], lambda h, rows: density(h, idx[rows], t_[rows, None]))
 
     def fallen(a_, e_):
         # A step can overshoot into an impossible orbit (NaN) when an object is already falling fast.
