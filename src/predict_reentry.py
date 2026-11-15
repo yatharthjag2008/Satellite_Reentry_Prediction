@@ -29,6 +29,9 @@ HISTORY_DAYS = 45
 SW_URL = "https://celestrak.org/SpaceData/SW-All.csv"
 SW_MAX_AGE = 86400  # re-download space weather once a day
 MAX_PHYSICS_DAYS = 365.25 * 30
+# Close to reentry, B fitted over the last few days of every orbit is far more accurate (EXPERIMENTS.md 015).
+SHORT_WINDOW = 8
+SHORT_WINDOW_BELOW = 10  # days: switch when the usual prediction is closer than this
 CONFORMAL_FILE = MODELS_DIR / "conformal_widths.json"
 
 
@@ -42,15 +45,12 @@ def refresh_space_weather():
 
 
 def fetch_history(st, norad_id):
-    """The object's recent orbits, the last one each day."""
+    """Every orbit of the object from the last HISTORY_DAYS."""
     start = (pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=HISTORY_DAYS)).strftime("%Y-%m-%d")
     text = st.get(f"query/class/gp_history/NORAD_CAT_ID/{norad_id}/EPOCH/>{start}"
                   f"/predicates/{FIELDS}/format/csv")
     history = pd.read_csv(io.StringIO(text), parse_dates=["EPOCH"]) if text.strip() else pd.DataFrame()
-    if history.empty:
-        return history
-    history["day"] = history["EPOCH"].dt.floor("D")
-    return history.sort_values("EPOCH").groupby("day").tail(1).drop(columns="day").reset_index(drop=True)
+    return history.sort_values("EPOCH", ignore_index=True) if len(history) else history
 
 
 def features(history):
@@ -80,7 +80,9 @@ def predict(st, norad_id):
     history = fetch_history(st, norad_id)
     if len(history) < 2:
         return None
-    df = features(history)
+    every = features(history)
+    # As in training: B and the hybrid's inputs come from one orbit a day (the last of each day).
+    df = every.groupby(every["EPOCH"].dt.floor("D")).tail(1).reset_index(drop=True)
     atm = MsisAtmosphere()
     df["B_fit"], df["n_fit"] = fit_drag_parameter(df, unit_decay_rate(df, atm))
     latest = df.iloc[[-1]].copy()
@@ -89,7 +91,14 @@ def predict(st, norad_id):
     result = {"epoch": latest["EPOCH"].iloc[0], "perigee": latest["PERIAPSIS"].iloc[0],
               "apogee": latest["APOAPSIS"].iloc[0], "B": latest["B_fit"].iloc[0],
               "perigee_rate": latest["perigee_rate_30d"].iloc[0], "physics_days": physics,
-              "hybrid_days": None, "range": None}
+              "hybrid_days": None, "range": None, "short_window": False,
+              "is_payload": latest["OBJECT_TYPE"].iloc[0] == "PAY"}
+    if np.isfinite(physics) and physics < SHORT_WINDOW_BELOW:
+        B_short = fit_drag_parameter(every, unit_decay_rate(every, atm), SHORT_WINDOW)[0][-1]
+        if np.isfinite(B_short) and B_short > 0:
+            result["physics_days"] = forecast(every.iloc[[-1]], np.array([B_short]), atm)[0]
+            result["short_window"] = True
+        return result
     # The hybrid only learned from objects in their final year, so only trust it inside that range.
     if not np.isfinite(physics) or physics > 2 * 365:
         return result
@@ -121,14 +130,19 @@ def describe(result):
     when = "%Y-%m-%d %H:%M UTC" if physics < 3 else "%Y-%m-%d"
     end = result["epoch"] + pd.Timedelta(days=physics)
     lines.append(f"Physics model: about {_duration(physics)} (around {end:{when}})")
+    if result.get("short_window"):
+        lines.append(f"(drag measured over the last {SHORT_WINDOW} days of tracking: our most accurate")
+        lines.append(" method this close to reentry; the official forecasts are better in the final day)")
     if result["hybrid_days"] is not None:
         end = result["epoch"] + pd.Timedelta(days=result["hybrid_days"])
         lines.append(f"Hybrid model:  about {_duration(result['hybrid_days'])} (around {end:{when}})")
         if result["range"] is not None:
             lo, hi = (result["epoch"] + pd.Timedelta(days=d) for d in result["range"])
             lines.append(f"90% range:     {lo:{when}} to {hi:{when}}")
-    else:
+    elif physics > 2 * 365:
         lines.append("More than about two years away, beyond what the hybrid model was trained on.")
+    if result.get("is_payload") and not result.get("short_window"):
+        lines.append("Note: if this satellite still uses thrusters to hold its orbit, it will stay up longer.")
     return lines
 
 

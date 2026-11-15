@@ -44,3 +44,14 @@ def test_describe_shows_the_time_of_day_when_close():
     text = "\n".join(describe(result(physics_days=0.75, hybrid_days=0.8, range=(0.5, 1.25))))
     assert "Physics model: about 18 hours (around 2026-11-02 00:00 UTC)" in text
     assert "90% range:     2026-11-01 18:00 UTC to 2026-11-02 12:00 UTC" in text
+
+
+def test_describe_explains_the_short_window_close_to_reentry():
+    text = "\n".join(describe(result(physics_days=2.0, hybrid_days=None, range=None, short_window=True)))
+    assert "last 8 days of tracking" in text
+    assert "Hybrid" not in text and "two years" not in text
+
+
+def test_describe_warns_that_satellites_can_reboost():
+    assert "thrusters" in "\n".join(describe(result(is_payload=True)))
+    assert "thrusters" not in "\n".join(describe(result(is_payload=False)))
