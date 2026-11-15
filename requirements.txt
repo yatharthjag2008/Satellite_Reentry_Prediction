@@ -1,11 +1,10 @@
 requests
-sgp4
-skyfield
 pandas
 numpy
+scipy
 scikit-learn
 xgboost
-shap
 matplotlib
-streamlit
-jupyter
+pyarrow
+pymsis
+pytest
