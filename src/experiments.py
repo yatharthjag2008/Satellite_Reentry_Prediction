@@ -220,7 +220,42 @@ def final_days_window():
     print(pd.DataFrame(rows).T.to_string(float_format="{:.1f}".format))
 
 
-EXPERIMENTS = {"hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning, "xgboost_tuning": xgboost_tuning,
+def hybrid_corrections():
+    """What does the hybrid correct? Its correction factor vs. the one actually needed, by condition."""
+    import matplotlib.pyplot as plt
+
+    from train_reentry_model import RESULTS_DIR, object_groups
+
+    train, test = load(verbose=False)
+    hybrid = train_hybrid(train)
+    has_physics = test["physics_days"].notna()
+    test = test[has_physics].copy()
+    test["learned"] = 10 ** hybrid.predict(test[HYBRID_FEATURES])
+    test["needed"] = test["days_left"] / test["physics_filled"]
+    groups = object_groups(test)
+    test["group"] = np.select(list(groups.values()), list(groups.keys()), default="other")
+    bins = {"solar flux (81-day F10.7)": pd.cut(test["f107_81d"], [0, 100, 130, 160, 190, 400]),
+            "physics prediction (days)": pd.cut(test["physics_days"], [0, 7, 30, 90, 365, 4000]),
+            "object group": test["group"]}
+    fig, axes = plt.subplots(1, len(bins), figsize=(16, 4.5), sharey=True)
+    for ax, (name, by) in zip(axes, bins.items()):
+        table = test.groupby(by, observed=True)[["needed", "learned"]].median()
+        print(f"\nMedian correction factor (actual / physics) by {name}")
+        print(table.round(2).to_string())
+        x = np.arange(len(table))
+        ax.bar(x - 0.2, table["needed"], 0.4, label="needed (actual / physics)")
+        ax.bar(x + 0.2, table["learned"], 0.4, label="learned by the hybrid")
+        ax.axhline(1, color="black", lw=0.8)
+        ax.set_xticks(x, [str(i) for i in table.index], rotation=20)
+        ax.set_title(name)
+    axes[0].set_ylabel("multiply the physics prediction by")
+    axes[0].legend()
+    fig.suptitle("What the hybrid corrects (test set, rows where the physics has an answer)")
+    fig.savefig(RESULTS_DIR / "hybrid_corrections.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+EXPERIMENTS = {"hybrid_corrections": hybrid_corrections, "hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning, "xgboost_tuning": xgboost_tuning,
                "solar_forecast": solar_forecast, "drag_stability": drag_stability,
                "final_days_window": final_days_window}
 
