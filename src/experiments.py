@@ -93,7 +93,22 @@ def hybrid_tuning():
     show(scores(preds, truth).sort_values("overall"))
 
 
-EXPERIMENTS = {"hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning}
+def xgboost_tuning():
+    """The same grid for plain XGBoost, so the comparison with the hybrid is fair."""
+    fit, val = validation_split()
+    truth = val["days_left"].to_numpy()
+    y = np.log10(fit["days_left"])
+    preds = {"default (depth 8, 600 trees x 0.05)": 10 ** train_xgboost(fit, FEATURES, y).predict(val[FEATURES])}
+    for depth in (3, 4, 6):
+        for min_child in (50, 500):
+            params = {**XGB_PARAMS, "max_depth": depth, "min_child_weight": min_child, "reg_lambda": 10.0,
+                      "n_estimators": 400}
+            model = xgb.XGBRegressor(**params).fit(fit[FEATURES], y)
+            preds[f"depth {depth}, min_child {min_child}, 400 trees"] = 10 ** model.predict(val[FEATURES])
+    show(scores(preds, truth).sort_values("overall"))
+
+
+EXPERIMENTS = {"hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning, "xgboost_tuning": xgboost_tuning}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in EXPERIMENTS:
