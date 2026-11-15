@@ -45,3 +45,33 @@ In a circular orbit v² = μ/a, so v³a²/μ = √(μa) and
 $$\boxed{\;\frac{da}{dt} = -B\,\rho(h)\,\sqrt{\mu a}\;}$$
 
 Two things follow. First, **drag makes the satellite speed up**: a smaller orbit has v = √(μ/a) larger, so losing energy raises the speed. That's why `MEAN_MOTION_DOT` (the orbit getting faster) is the model's most useful input. Second, the rate is proportional to ρ, which grows roughly exponentially as the orbit drops, so decay keeps accelerating. That's why the "current rate continues" rule of thumb overestimates lifetimes by a factor of 4–5.
+
+## 3. An exact lifetime for an exponential atmosphere
+
+Real air density depends on altitude, solar activity, time of day and more. To have something exact to test the code against, take the simplest model, density falling off exponentially with scale height H:
+
+$$\rho(h) = \rho_0\, e^{-(h-h_0)/H}$$
+
+With h = a − R and a₀ = R + h₀, the circular decay equation becomes
+
+$$\frac{da}{dt} = -B\rho_0\sqrt{\mu}\; a^{1/2}\, e^{-(a-a_0)/H}$$
+
+This separates. Moving everything with a to one side and integrating from the starting radius a_i down to the final radius a_f:
+
+$$T = \frac{1}{B\rho_0\sqrt{\mu}} \int_{a_f}^{a_i} a^{-1/2}\, e^{(a-a_0)/H}\, da$$
+
+Substitute a = H u², so da = 2H u du and a^{−1/2} = 1/(u√H):
+
+$$T = \frac{2\sqrt{H}\,e^{-a_0/H}}{B\rho_0\sqrt{\mu}} \int_{u_f}^{u_i} e^{u^2}\, du, \qquad u = \sqrt{a/H}$$
+
+The integral of e^{u²} has no elementary form, but it equals e^{u²}·D(u), where D is the [Dawson function](https://en.wikipedia.org/wiki/Dawson_function) (`scipy.special.dawsn`). So the lifetime is exactly
+
+$$\boxed{\;T = \frac{2\sqrt{H}}{B\rho_0\sqrt{\mu}} \Big[ e^{(a_i-a_0)/H} D\big(\sqrt{a_i/H}\big) - e^{(a_f-a_0)/H} D\big(\sqrt{a_f/H}\big) \Big]\;}$$
+
+Writing it with D keeps every exponent small; the equivalent form with erfi overflows.
+
+**Why the rule of thumb fails.** For large u, D(u) ≈ 1/(2u). Keeping only the first term,
+
+$$T \approx \frac{H}{B\,\rho(h_i)\sqrt{\mu a_i}} = \frac{H}{|da/dt|_i}$$
+
+The lifetime is about **one scale height divided by today's sinking rate**, not the remaining altitude divided by the rate. The rule of thumb uses (h − 120 km)/rate. At 400 km with H ≈ 60 km, that's 280/60 ≈ 5 times too long, which matches its measured 430% error (experiment 001).
