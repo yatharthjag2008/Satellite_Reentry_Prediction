@@ -194,3 +194,18 @@ The seasonal cycle helps in the final month (19% vs 22%, 14% vs 17%) but not fur
 | Hybrid + drag stability | 18% | 13% | 15% | 17% | 17% | 69% |
 
 **Conclusion:** short windows are much worse far from reentry. At 500 km an orbit sinks only tens of meters a day, so a week of decay is mostly measurement noise. 30 and 60 days are equally good, so 30 days stays (it needs less history). The stability inputs get some use (the 60-day ratio has importance 0.07) but don't change the result, so they aren't added: the hybrid already sees the 7- and 30-day sinking rates, which carry the same information.
+
+## 015: Fresh orbits and a short fit window in the final days
+
+**Setup:** experiment 011 used one orbit a day, typically 8–12 hours old. `download_final_orbits.py` fetched every orbit from each object's final 40 days (213,372 orbits, 2,006 objects), and `compare_official.py --fresh` repeats the comparison with our latest orbit, now a median 1.7 hours old. Then `experiments.py final_days_window` refits B over the last 1–30 days using every orbit (physics only, no training, so test objects are fair).
+
+| Made before reentry | Official | Physics, daily orbits (011) | Physics, fresh orbits, 30-day B | **Physics, fresh orbits, 8-day B** | Hybrid, fresh orbits |
+|---|---|---|---|---|---|
+| Under 1 day | **0.7 h** | 4.1 h | 2.3 h | 1.6 h | 5.4 h |
+| 1–2 days | **3.7 h** | 9.0 h | 7.8 h | 6.4 h | 8.3 h |
+| 2–4 days | **7.8 h** | 13.6 h | 12.3 h | 9.5 h | 13.9 h |
+| 4+ days | 37.1 h | 37.3 h | 34.3 h | **26.7 h** | 40.5 h |
+
+A 4-day window does about as well as 8 days; 2 days gets worse further out, and 1 day often has too few orbits to fit.
+
+**Conclusion:** experiment 014 found that a short window is noise far from reentry, but near the end the orbit sinks kilometers per day, so a few days of tracking measure B precisely and capture recent changes (tumbling, attitude) that a 30-day average blurs. With fresh orbits and an 8-day B, the physics model **beats the official prediction from 4+ days out by 28%** and comes within 1.2× of it at 2–4 days. In the final day the official forecast, with dense radar tracking and higher-fidelity models, stays far ahead. The hybrid hurts here, since its correction was learned from one-orbit-a-week rows and almost never saw the last hours. So the live tool now uses the short-window physics close to reentry.
