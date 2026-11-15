@@ -64,20 +64,28 @@ def monthly_weather():
     return sw["F10.7_OBS_LAST81"].resample("MS").mean(), sw["AP_AVG"].resample("MS").mean()
 
 
+def months_from(series, date):
+    """MAX_MONTHS values of a monthly series from `date`, padded with its last value if it ends sooner."""
+    values = series[date:].to_numpy()[:MAX_MONTHS]
+    return np.pad(values, (0, MAX_MONTHS - len(values)), mode="edge")
+
+
+def typical_ap(ap_monthly, date):
+    """Average Ap over the 11 years (one solar cycle) before `date`, known at the time."""
+    return ap_monthly[date - pd.DateOffset(years=11):date - pd.DateOffset(days=1)].mean()
+
+
 def weather_paths(table):
     """(flux, ap) arrays of shape (objects, months) for each assumption about the future Sun."""
     flux_rec, ap_rec = monthly_weather()
-    n = len(table)
     start = table["EPOCH"].dt.to_period("M").dt.start_time
-    # Typical Ap: the average over the 11 years before each prediction, known at the time.
-    ap_typical = np.array([ap_rec[d - pd.DateOffset(years=11):d - pd.DateOffset(days=1)].mean() for d in start])
-
+    ap_typical = np.array([typical_ap(ap_rec, d) for d in start])
+    typical = np.repeat(ap_typical[:, None], MAX_MONTHS, axis=1)
     fixed = np.repeat(table["f107_81d"].to_numpy()[:, None], MAX_MONTHS, axis=1)
     forecasts = {d: forecast_monthly(d, MAX_MONTHS) for d in start.unique()}
-    cycle = np.stack([forecasts[d] for d in start])
-    actual = np.stack([flux_rec[d:].to_numpy()[:MAX_MONTHS] for d in start]) if n else np.empty((0, MAX_MONTHS))
-    actual_ap = np.stack([ap_rec[d:].to_numpy()[:MAX_MONTHS] for d in start]) if n else np.empty((0, MAX_MONTHS))
-    typical = np.repeat(ap_typical[:, None], MAX_MONTHS, axis=1)
+    cycle = np.array([forecasts[d] for d in start]).reshape(-1, MAX_MONTHS)
+    actual = np.array([months_from(flux_rec, d) for d in start]).reshape(-1, MAX_MONTHS)
+    actual_ap = np.array([months_from(ap_rec, d) for d in start]).reshape(-1, MAX_MONTHS)
     return {"today's flux held fixed": (fixed, typical),
             "solar-cycle forecast": (cycle, typical),
             "actual flux (perfect forecast)": (actual, actual_ap)}
@@ -137,6 +145,8 @@ def main():
     usable = (table["B_fit"] > 0).to_numpy()
     for group, mask in object_groups(table).items():
         mask = mask & usable
+        if not mask.any():
+            continue
         print(f"\n{group} ({mask.sum():,} objects): median error by true remaining lifetime")
         print(error_by_band(table[mask], {k: v[mask] for k, v in predictions.items()})
               .to_string(float_format="{:.0%}".format))
