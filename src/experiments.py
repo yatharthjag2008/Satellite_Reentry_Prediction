@@ -19,8 +19,8 @@ from build_reentry_dataset import DATA_DIR
 from orbit_decay import propagate
 from physics_model import semi_major_axis
 
-from train_reentry_model import (BASE_PARAMS, FEATURES, HORIZONS, HYBRID_FEATURES, UNTUNED_PARAMS, load,
-                                 predict_hybrid, train_hybrid, train_xgboost)
+from train_reentry_model import (BASE_PARAMS, FEATURES, HORIZONS, HYBRID_FEATURES, HYBRID_PARAMS, NO_PHYSICS_DAYS,
+                                 UNTUNED_PARAMS, load, predict_hybrid, train_hybrid, train_xgboost)
 
 VALIDATE_FROM = "2023-01-01"
 
@@ -158,8 +158,40 @@ def solar_forecast(sample=5000):
     show(scores(preds, truth))
 
 
+def add_drag_stability(df):
+    """log10 of B over 7, 14 and 60 days relative to B over 30 days: near 0 when drag is steady."""
+    for w in (7, 14, 60):
+        ratio = df[f"B_fit_{w}d"] / df["B_fit"]
+        df[f"B_ratio_{w}d"] = np.log10(ratio.where(ratio > 0))
+    return df
+
+
+STABILITY_FEATURES = ["B_ratio_7d", "B_ratio_14d", "B_ratio_60d"]
+
+
+def drag_stability():
+    """Which window to fit B over, and whether telling the hybrid how steady B is helps."""
+    fit, val = (add_drag_stability(d.copy()) for d in validation_split())
+    truth = val["days_left"].to_numpy()
+    preds = {}
+    # With the weather held fixed, lifetime scales exactly as 1/B, so other windows need no new simulation.
+    for w in (7, 14, 30, 60):
+        B = val["B_fit"] if w == 30 else val[f"B_fit_{w}d"]
+        scaled = val["physics_days"] * val["B_fit"] / B
+        preds[f"physics, B fitted over {w} days"] = scaled.where(B > 0).fillna(NO_PHYSICS_DAYS).clip(lower=0.01).to_numpy()
+
+    preds["hybrid"] = predict_hybrid(train_hybrid(fit), val)
+    features = HYBRID_FEATURES + STABILITY_FEATURES
+    residual = np.log10(fit["days_left"] / fit["physics_filled"])
+    model = xgb.XGBRegressor(**HYBRID_PARAMS).fit(fit[features], residual)
+    preds["hybrid + drag stability"] = val["physics_filled"].to_numpy() * 10 ** model.predict(val[features])
+    show(scores(preds, truth))
+    importance = pd.Series(model.feature_importances_, index=features).sort_values(ascending=False)
+    print("\nimportance of the stability inputs:", importance[STABILITY_FEATURES].round(3).to_dict())
+
+
 EXPERIMENTS = {"hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning, "xgboost_tuning": xgboost_tuning,
-               "solar_forecast": solar_forecast}
+               "solar_forecast": solar_forecast, "drag_stability": drag_stability}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in EXPERIMENTS:
