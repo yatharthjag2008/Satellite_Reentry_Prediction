@@ -23,6 +23,7 @@ Numbered experiments on predicting reentry. Each entry records what changed, wha
 | [017](#017-part-1-physics-from-the-first-40-days-to-reentry) | Lifetime from the first 40 days? | 29% with a solar-cycle forecast (84% without) |
 | [018](#018-part-1-physics-vs-ml-vs-hybrid) | Does ML help for lifetimes? | Seems to (26%) under cross-validation by launch... |
 | [019](#019-part-1-with-a-fair-time-split) | ...and on a later period? | No: physics 35%, ML 55–69% |
+| [020](#020-does-the-solar-cycle-forecast-help-within-a-year) | Does the solar-cycle forecast help Part 2? | No: it only matters over years |
 
 ## 001: Baseline models
 
@@ -298,3 +299,15 @@ By group (solar-cycle forecast): near-circular rocket bodies 21%, near-circular 
 | Physics + ML hybrid | 55% | 16% | 51% | 34% |
 
 **Conclusion:** an important correction to 018. Tested on a later period, the ML models fall apart (69% and 55%), while the physics, which isn't trained at all, keeps its accuracy (23% for satellites, compared with 25% in 017). Two reasons: the training set is small (438 objects), and the satellite population changed between periods (the CubeSat boom started around 2012), so patterns learned from 2000–2011 don't transfer. Cross-validation by launch let the ML see objects from the same era, which flattered it. **For whole lifetimes, the physics with the solar-cycle forecast is the method to trust**; the hybrid's advantage in 018 shouldn't be relied on. In Part 2 the hybrid did pass a fair time split (008, 012), because there it had 336,000 training rows covering two solar cycles.
+
+## 020: Does the solar-cycle forecast help within a year?
+
+**Setup:** `experiments.py solar_forecast` again, adding the Part 1 solar-cycle forecast (month by month, Ap held at its recent value) to the 5,000-row comparison of experiment 013.
+
+| Future weather | < 1 week | 1–4 weeks | 1–3 months | 3–12 months | Overall |
+|---|---|---|---|---|---|
+| Today's held fixed (baseline) | 22% | 17% | 18% | 27% | 24% |
+| Solar-cycle forecast | 21% | 16% | 18% | 27% | 24% |
+| Perfect forecast (trailing 81-day flux) | 19% | 13% | 19% | 24% | 22% |
+
+**Conclusion:** no gain. The forecast blends from today's flux into the cycle shape over about a year, so within a year it hardly differs from holding today's flux fixed, and the cycle shape can't predict the month-to-month swings that make up most of the remaining 2-point gap to a perfect forecast. It matters for multi-year lifetimes (017: 84% → 29%), not for days-until-reentry, so Part 2 keeps the simpler fixed weather and leaves the solar peak to the hybrid (016).
