@@ -105,3 +105,20 @@ By object type: debris and rocket bodies 17% (XGBoost 19%, physics 23%), payload
 | Starlink | 49% | 29% | **28%** |
 
 **Conclusion:** the validation-year ranking held on the test set. The hybrid is the best model overall and for every object type, and its 16% compares with 26% for the original XGBoost (experiment 001). The tuned XGBoost is weak in the final week (27%), where the physics carries the hybrid. Starlink is still the hardest case, as expected for satellites whose reentry is chosen by the operator.
+
+## 009: Conformal 90% ranges, calibrated on 2023
+
+**Setup:** `uncertainty.py`. Hybrid fit on reentries before 2023; its errors on 2023 reentries set the range width. Two methods: Mondrian split conformal (one width per band of predicted days) and conformalized quantile regression (CQR: XGBoost predicts the 5th and 95th percentiles, then the 2023 errors widen them as needed).
+
+| Test rows | Mondrian: contains truth | Mondrian: high/low | CQR: contains truth | CQR: high/low |
+|---|---|---|---|---|
+| Under 1 week | 85% | 2.1× | 93% | 6.1× |
+| 1–4 weeks | 78% | 2.0× | 93% | 2.7× |
+| 1–3 months | 77% | 2.4× | 87% | 2.8× |
+| 3–12 months | 82% | 2.5× | 85% | 2.8× |
+| **Overall** | **81%** | 2.5× | **86%** | 2.8× |
+| Debris + rocket bodies | 90% | 2.5× | 90% | 2.8× |
+| Payloads | 94% | 2.5× | 88% | 2.3× |
+| Starlink | 59% | 2.5× | 81% | 4.2× |
+
+**Conclusion:** conformal prediction guarantees 90% only if the future looks like the calibration data. For debris and rocket bodies it does, and coverage is exactly 90%. For Starlink it doesn't: 2024–2026 brought far more Starlink reentries, at higher solar activity, than 2023. CQR adapts better because its widths depend on each object's features (Starlink ranges are 4.2× wide against 2.3× for payloads), but still falls short. Next: recalibrate as time goes on, using only objects that had already reentered before each prediction.
