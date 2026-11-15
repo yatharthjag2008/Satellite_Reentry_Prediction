@@ -113,3 +113,13 @@ def test_drag_rates_converge_for_a_transfer_orbit():
 def test_huge_drag_parameter_reenters_instead_of_failing():
     days = propagate([R_EARTH + 130.0, R_EARTH + 400.0], 0.0, [1e4, B], exponential(ATM))
     assert days[0] < 0.01 and np.isfinite(days[1])
+
+
+def test_perigee_arc_matches_whole_orbit_for_stretched_orbits():
+    for hp, ha in [(180.0, 35786.0), (300.0, 5000.0), (250.0, 2600.0)]:
+        rp, ra = R_EARTH + hp, R_EARTH + ha
+        a, e = (rp + ra) / 2, (ra - rp) / (ra + rp)
+        arc = drag_rates(a, e, B, lambda h, rows: ATM.density(h))
+        whole = orbit_averaged_rates(a, e, B, ATM.density, n_points=16384)
+        assert arc[0][0] == pytest.approx(whole[0], rel=1e-4)
+        assert arc[1][0] == pytest.approx(whole[1], rel=1e-4)

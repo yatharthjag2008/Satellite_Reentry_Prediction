@@ -64,17 +64,47 @@ def points_needed(a_km, e, scale_height=40.0):
     return np.clip(2 ** np.ceil(np.log2(n)), 8, 1024).astype(int)
 
 
-def drag_rates(a_km, e, B, density):
+def perigee_arc_rates(a_km, e, B, density, top_altitude, n_points=64):
+    """Orbit-averaged rates counting only the arc of the orbit below top_altitude.
+
+    For a very stretched orbit, almost all the drag happens in a short arc around
+    perigee. Gauss-Legendre points spread over just that arc (|E| <= E_top, where
+    r(E_top) = R + top_altitude) resolve the drag bump with far fewer points than
+    sampling the whole orbit. The air above top_altitude is too thin to matter.
+    """
+    cos_top = np.clip((1 - (R_EARTH + top_altitude) / a_km) / np.maximum(e, 1e-12), -1.0, 1.0)
+    E_top = np.arccos(cos_top)[..., None]
+    x, w = np.polynomial.legendre.leggauss(n_points)
+    E = E_top * x
+    a, ecc = a_km[..., None] * 1e3, e[..., None]
+    one_minus = 1 - ecc * np.cos(E)
+    r = a * one_minus
+    v = np.sqrt(MU * (2 / r - 1 / a))
+    cos_nu = (np.cos(E) - ecc) / one_minus
+    rho = density(r / 1e3 - R_EARTH)
+    weight = E_top * w * one_minus / (2 * np.pi)
+    da = -(B[..., None] * rho * v**3 * a**2 / MU * weight).sum(-1)
+    de = -(B[..., None] * rho * v * (ecc + cos_nu) * weight).sum(-1)
+    return da * SECONDS_PER_DAY / 1e3, de * SECONDS_PER_DAY
+
+
+def drag_rates(a_km, e, B, density, top_altitude=2500.0):
     """Orbit-averaged rates, using as many sample points as each orbit needs.
 
     density(h_km, rows) gives density for the objects in positions `rows` of the inputs.
+    Orbits reaching above top_altitude only sample the arc below it (perigee_arc_rates).
     """
     a_km, e, B = np.broadcast_arrays(*[np.atleast_1d(np.asarray(x, float)) for x in (a_km, e, B)])
     e = np.clip(e, 0.0, 0.99)  # an RK4 half-step can overshoot a nearly circular orbit below zero
     da, de = np.empty_like(a_km), np.empty_like(a_km)
+    high = a_km * (1 + e) - R_EARTH > top_altitude
+    rows = np.flatnonzero(high)
+    if len(rows):
+        da[rows], de[rows] = perigee_arc_rates(a_km[rows], e[rows], B[rows], lambda h: density(h, rows),
+                                               top_altitude)
     n = points_needed(a_km, e)
-    for count in np.unique(n):
-        rows = np.flatnonzero(n == count)
+    for count in np.unique(n[~high]):
+        rows = np.flatnonzero(~high & (n == count))
         da[rows], de[rows] = orbit_averaged_rates(a_km[rows], e[rows], B[rows],
                                                   lambda h: density(h, rows), n_points=count)
     return da, de
