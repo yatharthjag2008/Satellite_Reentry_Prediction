@@ -32,26 +32,47 @@ def objects():
     return satcat.loc[keep, ["NORAD_CAT_ID", "LAUNCH_DATE"]]
 
 
+
+def batches(todo, max_objects=BATCH_SIZE, max_months=12):
+    """Consecutive launch months packed into one query while they total at most max_objects.
+
+    Before about 2016 most months have only a few launches, so packing them saves
+    hundreds of rate-limited queries. A busy month gets a batch of its own.
+    """
+    counts = todo.groupby("month").size()
+    batch, total = [], 0
+    for month, n in counts.items():
+        if batch and (total + n > max_objects or len(batch) == max_months):
+            yield batch
+            batch, total = [], 0
+        batch.append(month)
+        total += n
+    if batch:
+        yield batch
+
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     todo = objects()
-    by_month = todo.groupby(todo["LAUNCH_DATE"].dt.to_period("M"))
+    todo["month"] = todo["LAUNCH_DATE"].dt.to_period("M")
+    todo = todo[[not (OUT_DIR / f"launched_{m}.parquet").exists() for m in todo["month"]]]
     st = SpaceTrack()
     try:
-        for i, (month, group) in enumerate(by_month, start=1):
-            path = OUT_DIR / f"launched_{month}.parquet"
-            if path.exists():
-                continue
+        for months in batches(todo):
+            group = todo[todo["month"].isin(months)]
             ids = sorted(group["NORAD_CAT_ID"])
-            start, end = month.start_time, month.end_time + pd.Timedelta(days=EARLY_DAYS + 1)
+            start, end = months[0].start_time, months[-1].end_time + pd.Timedelta(days=EARLY_DAYS + 1)
             parts = [fetch(st, ids[k:k + BATCH_SIZE], start, end) for k in range(0, len(ids), BATCH_SIZE)]
             orbits = pd.concat(parts, ignore_index=True)
             if len(orbits):
                 launch = orbits["NORAD_CAT_ID"].map(group.set_index("NORAD_CAT_ID")["LAUNCH_DATE"])
                 orbits = orbits[orbits["EPOCH"] < launch + pd.Timedelta(days=EARLY_DAYS)]
-            orbits.to_parquet(path, index=False)
-            print(f"[{i}/{len(by_month)}] {month}: {orbits['NORAD_CAT_ID'].nunique() if len(orbits) else 0}"
-                  f"/{len(ids)} objects, {len(orbits):,} orbits", flush=True)
+                month_of = orbits["NORAD_CAT_ID"].map(group.set_index("NORAD_CAT_ID")["month"])
+            for month in months:  # one file per launch month, so a rerun resumes cleanly
+                part = orbits[month_of == month] if len(orbits) else orbits
+                path = OUT_DIR / f"launched_{month}.parquet"
+                part.to_parquet(path.with_suffix(".tmp"), index=False)
+                path.with_suffix(".tmp").replace(path)  # never leave a half-written file to be skipped
+            print(f"{months[0]} to {months[-1]}: {len(ids)} objects, {len(orbits):,} orbits", flush=True)
     finally:
         st.close()
     files = sorted(OUT_DIR.glob("launched_*.parquet"))
