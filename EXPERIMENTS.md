@@ -179,3 +179,18 @@ The physics alone is erratic: 18–27% in most years, but 42–48% in 2010–201
 2. **Even a perfect forecast only improves the physics from 24% to 22%.** In 2024–2026 the main error isn't the weather but B itself: satellites change their attitude, raise their orbits, or start tumbling, so the drag measured over the past month doesn't hold for the coming months. That's the part the hybrid learns to correct, and it suggests a good solar forecast is worth less than better handling of B (for example, how much B varied over the fit window).
 
 The seasonal cycle helps in the final month (19% vs 22%, 14% vs 17%) but not further out, so the baseline keeps the year-average density.
+
+## 014: Which window to fit B over, and does drag stability help?
+
+**Setup:** `experiments.py drag_stability` on the 2023 validation year. B fitted over the past 7, 14, 30 or 60 days. With the weather held fixed, the lifetime scales exactly as 1/B (derivation section 2), so the physics prediction for another window is the 30-day prediction × B₃₀/B_w, with no new simulation. Separately, the hybrid gets three extra inputs, log10(B_w/B₃₀) for w = 7, 14, 60, which are near 0 when the drag is steady.
+
+| | < 1 week | 1–4 weeks | 1–3 months | 3–12 months | Overall | Within 25% |
+|---|---|---|---|---|---|---|
+| Physics, 7-day B | 21% | 17% | 29% | 53% | 44% | 37% |
+| Physics, 14-day B | 20% | 15% | 19% | 35% | 29% | 46% |
+| **Physics, 30-day B** | 19% | 13% | 16% | 26% | **23%** | 53% |
+| Physics, 60-day B | 19% | 13% | 15% | 27% | 23% | 53% |
+| Hybrid | 17% | 12% | 16% | 17% | **17%** | 69% |
+| Hybrid + drag stability | 18% | 13% | 15% | 17% | 17% | 69% |
+
+**Conclusion:** short windows are much worse far from reentry. At 500 km an orbit sinks only tens of meters a day, so a week of decay is mostly measurement noise. 30 and 60 days are equally good, so 30 days stays (it needs less history). The stability inputs get some use (the 60-day ratio has importance 0.07) but don't change the result, so they aren't added: the hybrid already sees the 7- and 30-day sinking rates, which carry the same information.
