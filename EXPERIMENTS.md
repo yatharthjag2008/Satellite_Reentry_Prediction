@@ -264,3 +264,15 @@ By group (solar-cycle forecast): near-circular rocket bodies 21%, near-circular 
 | Starlink | 698% | 29% | **28%** |
 
 **Conclusion:** the same pattern as Part 2. The hybrid is best overall (26%) because it takes the physics where the physics works and falls back on learned patterns where it doesn't: for Starlink, the ML learns that operators keep them up about five years, which no drag model can know. For near-circular rocket bodies, which nothing steers, the physics alone is already as good as anything (24%). The caveat is the validation: cross-validating by launch keeps sibling objects apart but doesn't test on a later time period, so these numbers are likely somewhat optimistic for the ML models (not for the physics, which isn't trained).
+
+## 019: Part 1 with a fair time split
+
+**Setup:** `train_lifetime_model.py --time-split`. Experiment 018 cross-validated by launch, which doesn't test on a later period. A plain time split would be biased by censoring, so this keeps only objects launched before 2016 that lived at most 10 years: every such object has reentered by 2026, so training (438 objects launched 2000–2011) and testing (184 launched 2012–2015) are filtered the same way.
+
+| Model (test: launched 2012–2015) | Overall | Within 25% | Near-circular satellites | Near-circular rocket bodies |
+|---|---|---|---|---|
+| **Physics, solar-cycle forecast** | **35%** | **43%** | **23%** | **28%** |
+| XGBoost | 69% | 16% | 70% | 44% |
+| Physics + ML hybrid | 55% | 16% | 51% | 34% |
+
+**Conclusion:** an important correction to 018. Tested on a later period, the ML models fall apart (69% and 55%), while the physics, which isn't trained at all, keeps its accuracy (23% for satellites, compared with 25% in 017). Two reasons: the training set is small (438 objects), and the satellite population changed between periods (the CubeSat boom started around 2012), so patterns learned from 2000–2011 don't transfer. Cross-validation by launch let the ML see objects from the same era, which flattered it. **For whole lifetimes, the physics with the solar-cycle forecast is the method to trust**; the hybrid's advantage in 018 shouldn't be relied on. In Part 2 the hybrid did pass a fair time split (008, 012), because there it had 336,000 training rows covering two solar cycles.
