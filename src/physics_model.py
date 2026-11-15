@@ -25,6 +25,7 @@ DATA_FILE = ROOT / "data" / "spacetrack" / "reentry_dataset.parquet"
 OUT_FILE = ROOT / "data" / "spacetrack" / "physics_predictions.parquet"
 
 FIT_WINDOW = 30   # days of orbit history used to fit B
+OTHER_WINDOWS = (7, 14, 60)  # also saved: how B differs over shorter and longer windows shows if drag is changing
 MIN_FIT_POINTS = 5
 EVERY = 7         # predict from one orbit a week per object
 MAX_DAYS = 3650.0
@@ -104,6 +105,8 @@ def main():
     g = unit_decay_rate(df, atm)
     B, n_fit = fit_drag_parameter(df, g)
     df["B_fit"], df["n_fit"] = B, n_fit
+    for window in OTHER_WINDOWS:
+        df[f"B_fit_{window}d"] = fit_drag_parameter(df, g, window)[0]
     print(f"fitted B for {np.isfinite(B).mean():.0%} of rows; {(B <= 0).mean():.1%} negative (orbit raised)"
           f"  [{time.time() - start:.0f} s]")
 
@@ -111,7 +114,7 @@ def main():
     weekly["physics_days"] = forecast(weekly, weekly["B_fit"].to_numpy(), atm)
     print(f"simulated {len(weekly):,} orbits  [{time.time() - start:.0f} s]")
 
-    cols = ["NORAD_CAT_ID", "EPOCH", "B_fit", "n_fit", "physics_days"]
+    cols = ["NORAD_CAT_ID", "EPOCH", "B_fit", "n_fit", "physics_days"] + [f"B_fit_{w}d" for w in OTHER_WINDOWS]
     weekly[cols].to_parquet(OUT_FILE, index=False)
     print(f"saved {OUT_FILE}")
 
