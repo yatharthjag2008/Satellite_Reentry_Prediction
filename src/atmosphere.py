@@ -37,6 +37,86 @@ class ExponentialAtmosphere:
         return self.rho0 * np.exp(-(np.asarray(h_km) - self.h0) / self.scale_height)
 
 
+
+def _bracket(x, grid):
+    """Index of the grid point at or below x, and the fraction of the way to the next one (x clipped to the grid)."""
+    x = np.clip(x, grid[0], grid[-1])
+    i = np.clip(np.searchsorted(grid, x, side="right") - 1, 0, len(grid) - 2)
+    return i, (x - grid[i]) / (grid[i + 1] - grid[i])
+
+
+class MsisAtmosphere:
+    """Global-average NRLMSIS 2.1 density, interpolated from the pre-computed table.
+
+    Interpolates log10(density) linearly in altitude, solar flux, Ap and time of
+    year (wrapping around from December to January). Inputs outside the grid are
+    clipped to its edge. Without a day of year, uses the average over the year.
+    """
+
+    def __init__(self, path=TABLE_FILE):
+        if not Path(path).exists():
+            raise SystemExit(f"No density table at {path}. Run src/atmosphere.py first.")
+        table = np.load(path)
+        self.log_rho = table["log_rho"].astype(float)              # (alt, f107, ap, month)
+        self.log_rho_year = np.log10((10 ** self.log_rho).mean(-1))  # (alt, f107, ap)
+        self.altitudes, self.f107s, self.aps = table["altitudes"], table["f107s"], table["aps"]
+
+    def _profile_weights(self, f107a, ap, doy):
+        """Per-object weights for every table corner except altitude: list of (weight, f index, ap index, month)."""
+        i_f, w_f = _bracket(np.asarray(f107a, float), self.f107s)
+        i_a, w_a = _bracket(np.asarray(ap, float), self.aps)
+        corners = []
+        for df, wf in ((0, 1 - w_f), (1, w_f)):
+            for da, wa in ((0, 1 - w_a), (1, w_a)):
+                if doy is None:
+                    corners.append((wf * wa, i_f + df, i_a + da, None))
+                    continue
+                pos = (np.asarray(doy, float) - DAYS_OF_YEAR[0]) / (365.25 / 12) % 12
+                m0 = np.floor(pos).astype(int)
+                w_m = pos - m0
+                corners.append((wf * wa * (1 - w_m), i_f + df, i_a + da, m0 % 12))
+                corners.append((wf * wa * w_m, i_f + df, i_a + da, (m0 + 1) % 12))
+        return corners
+
+    def density(self, h_km, f107a, ap, doy=None):
+        """Density in kg/m^3; all inputs broadcast against each other."""
+        h_km, f107a, ap = np.broadcast_arrays(np.asarray(h_km, float), f107a, ap)
+        if doy is not None:
+            doy = np.broadcast_to(doy, h_km.shape)
+        i_h, w_h = _bracket(h_km, self.altitudes)
+        log_rho = 0.0
+        for w, i_f, i_a, m in self._profile_weights(f107a, ap, doy):
+            table = self.log_rho_year if m is None else self.log_rho
+            idx = (i_f, i_a) if m is None else (i_f, i_a, m)
+            lo, hi = table[(i_h, *idx)], table[(i_h + 1, *idx)]
+            log_rho = log_rho + w * (lo + w_h * (hi - lo))
+        return 10 ** log_rho
+
+    def profile(self, f107a, ap, doy=None):
+        """Density as a function of altitude only, for space weather held fixed.
+
+        f107a and ap are 1-D arrays (one value per object). Returns density(h_km) for
+        h_km of shape (objects, ...), which is far faster than calling density() at
+        every step of a simulation.
+        """
+        f107a, ap = np.atleast_1d(np.asarray(f107a, float)), np.atleast_1d(np.asarray(ap, float))
+        doy = None if doy is None else np.broadcast_to(doy, f107a.shape)
+        profiles = 0.0
+        for w, i_f, i_a, m in self._profile_weights(f107a, ap, doy):
+            rows = self.log_rho_year[:, i_f, i_a] if m is None else self.log_rho[:, i_f, i_a, m]
+            profiles = profiles + w * rows                          # (alt, objects)
+        profiles = profiles.T                                       # (objects, alt)
+        alts = self.altitudes
+
+        def density(h_km):
+            h_km = np.asarray(h_km, float)
+            i_h, w_h = _bracket(h_km, alts)
+            obj = np.arange(len(profiles)).reshape((-1,) + (1,) * (h_km.ndim - 1))
+            lo, hi = profiles[obj, i_h], profiles[obj, i_h + 1]
+            return 10 ** (lo + w_h * (hi - lo))
+
+        return density
+
 def build_msis_table(path=TABLE_FILE):
     """Global-average log10 density from NRLMSIS 2.1 on the grid above."""
     import pymsis
