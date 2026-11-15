@@ -28,7 +28,21 @@ On objects that reentered from 2024 onward, which no model saw during training (
 - **Calibrated uncertainty.** Conformal prediction gives a 90% range around each prediction, recalibrated monthly on recent reentries; it contains the truth 89% of the time.
 - **Against the official US Space Force predictions:** given equally fresh orbits, the physics model is 28% more accurate than the official forecasts from 4+ days out, and within 1.2× of them 2–4 days out; in the final day the official forecasts, with dense radar tracking, are far better. See [below](#against-the-official-predictions).
 
-Every number comes from [`EXPERIMENTS.md`](EXPERIMENTS.md), a numbered log of 15 experiments, with every model setting chosen on a 2023 validation year rather than the test set.
+Every number comes from [`EXPERIMENTS.md`](EXPERIMENTS.md), a numbered log of 19 experiments, with every model setting chosen on a 2023 validation year rather than the test set.
+
+### Whole lifetimes from the first month (Part 1)
+
+From only an object's orbits 10–40 days after launch, the physics model with a solar-cycle forecast predicts how long it will stay up, often years ahead. On 2,982 satellites and rocket bodies launched since 2000:
+
+| Future solar flux | 1–3 years left | 3–10 years left | Overall |
+|---|---|---|---|
+| Today's held fixed | 54% | 247% | 84% |
+| **Solar-cycle forecast** | 31% | **20%** | **29%** |
+| Perfect forecast (upper bound) | 16% | 20% | 20% |
+
+Near-circular satellites come out at about 25% and rocket bodies at about 21%. Tested on launches from a later period (2012–2015), the physics held up (23% for satellites), while ML models trained on earlier launches did not (experiment 019). The model doesn't work for transfer orbits, where the Moon's and Sun's gravity move the perigee, or for Starlink, whose lifetime is set by the operator.
+
+![Lifetime predicted vs. actual](results/lifetime_predicted_vs_actual.png)
 
 ## How it works
 
@@ -56,6 +70,8 @@ The physics code is tested against exact answers: in an exponential atmosphere t
 | [`src/uncertainty.py`](src/uncertainty.py) | Conformal 90% ranges, static and rolling |
 | [`src/backtest.py`](src/backtest.py) | Year-by-year backtest since 2005 |
 | [`src/download_tip.py`](src/download_tip.py), [`src/download_final_orbits.py`](src/download_final_orbits.py), [`src/compare_official.py`](src/compare_official.py) | Comparison with the official reentry predictions |
+| [`src/solar_cycle.py`](src/solar_cycle.py) | Forecasts solar flux years ahead from the shape of past cycles |
+| [`src/download_early_orbits.py`](src/download_early_orbits.py), [`src/lifetime_model.py`](src/lifetime_model.py), [`src/train_lifetime_model.py`](src/train_lifetime_model.py) | Part 1: whole lifetimes from the first 40 days in orbit |
 | [`src/analyze_errors.py`](src/analyze_errors.py) | Breaks down where the first XGBoost model went wrong |
 | [`src/explore_data.py`](src/explore_data.py) | Exploratory analysis of the satellite catalog and space weather |
 | [`src/collect_snapshots.py`](src/collect_snapshots.py) | Optional daily collector of current orbits from CelesTrak |
@@ -114,6 +130,10 @@ python src/atmosphere.py              # NRLMSIS density table, about 4 minutes
 python src/physics_model.py           # about 7 minutes
 python src/train_reentry_model.py     # about 3 minutes
 python src/uncertainty.py             # ranges used by the lookup
+
+python src/download_early_orbits.py   # Part 1: about an hour
+python src/lifetime_model.py          # under a minute
+python src/train_lifetime_model.py
 ```
 
 ## Against the official predictions
@@ -151,7 +171,9 @@ Before the Space-Track data, `explore_data.py` looked at the catalog alone. Its 
 - [x] Conformal 90% ranges with rolling recalibration
 - [x] Comparison with the official US Space Force predictions
 - [x] Live predictions in the lookup tool
-- [ ] Lifetime from the first orbits after launch (Part 1)
+- [x] Whole lifetime from the first 40 days after launch, with a solar-cycle forecast (Part 1)
+- [ ] Lunisolar perturbations, so transfer orbits can be predicted too
+- [ ] Recalibrate the hybrid's ranges for the final days, using every orbit
 
 ## Project structure
 
