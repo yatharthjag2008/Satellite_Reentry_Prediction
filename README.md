@@ -1,5 +1,7 @@
 # Satellite Reentry Prediction
 
+[![tests](https://github.com/yatharthjag2008/Satellite_Reentry_Prediction/actions/workflows/tests.yml/badge.svg)](https://github.com/yatharthjag2008/Satellite_Reentry_Prediction/actions/workflows/tests.yml)
+
 **Given an object's recent orbits and the space weather, how many days until it falls back into Earth's atmosphere?**
 
 Reentry is hard to predict because the upper atmosphere keeps changing: when the Sun is active, it heats and expands the air, increasing drag on everything in low orbit. This project combines a **physics model of atmospheric drag**, derived from first principles and driven by the NRLMSIS 2.1 atmosphere, with **machine learning that learns to correct the physics**. It is trained on the final year of orbits of 17,558 objects that reentered since 2000 and tested on 4,897 objects that reentered from 2024 on.
@@ -15,6 +17,8 @@ On objects that reentered from 2024 onward, which no model saw during training (
 | XGBoost (tuned) | 27% | **15%** | 19% | 19% | 19% | 63% |
 | Gaussian process | 24% | 18% | 25% | 23% | 23% | 54% |
 | **Physics + ML hybrid** | **21%** | 16% | **18%** | **16%** | **16%** | **67%** |
+
+![Error by time left until reentry](results/error_by_horizon.png)
 
 ![Predicted vs. actual days until reentry](results/predicted_vs_actual.png)
 
@@ -69,7 +73,7 @@ python -m venv .venv
 # source .venv/bin/activate     # macOS / Linux
 
 pip install -r requirements.txt
-python -m pytest                # 35 tests, including the physics checks
+python -m pytest                # 40 tests, including the physics checks
 ```
 
 The catalog and space weather are included in `data/`, so the lookup works right away:
@@ -78,7 +82,19 @@ The catalog and space weather are included in `data/`, so the lookup works right
 python src/lookup_satellite.py
 ```
 
-Type a full or partial name (`ISS (ZARYA)`, `HST`, `starlink`) or a NORAD ID (`25544`). For an object still in low orbit it asks whether to predict its reentry, which needs the Space-Track login and trained models below.
+Type a full or partial name (`ISS (ZARYA)`, `HST`, `starlink`) or a NORAD ID (`25544`). For an object still in low orbit it asks whether to predict its reentry, which needs the Space-Track login and trained models below. It picks the method that tested best for how far away reentry is:
+
+- **within about 10 days:** the physics model with drag measured over the last 8 days of tracking
+- **10 days to 2 years:** the physics + ML hybrid, with a 90% range
+- **further out:** the physics model with a forecast of the Sun's 11-year cycle
+
+```
+ REENTRY PREDICTION
+ Latest orbit 2026-11-15 12:02 UTC: 238 x 247 km
+ Physics model: about 9 days (around 2026-11-24)
+ (drag measured over the last 8 days of tracking: our most accurate
+  method this close to reentry; the official forecasts are better in the final day)
+```
 
 ### Reproducing the models
 
