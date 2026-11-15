@@ -48,3 +48,19 @@ The physics has its own answer for 71% of test rows. On those rows its median er
 By object type: debris and rocket bodies 17% (XGBoost 19%, physics 23%), payloads 15%, Starlink 38%. The physics prediction is by far the hybrid's most used input (importance 0.34, next 0.09).
 
 **Conclusion:** the hybrid is the best overall and on debris, but only by 1–2 points, and it is worse than XGBoost in the final week and worse than the physics alone on payloads (14%). The residual model seems to be undoing good physics predictions as often as fixing bad ones. Next: regularize the hybrid and check whether simply averaging models helps.
+
+## 005: Ways to combine physics and ML (validation year)
+
+**Setup:** from here on, choices are made on a **validation year** so the test set is only used once at the end: fit on objects that reentered before 2023 (10,656), score on objects that reentered during 2023 (2,005). `experiments.py hybrid_variants`.
+
+| Variant | < 1 week | 1–4 weeks | 1–3 months | 3–12 months | Overall | Within 25% |
+|---|---|---|---|---|---|---|
+| Physics | 19% | 13% | 16% | 26% | 23% | 53% |
+| XGBoost | 17% | 16% | 25% | 23% | 23% | 55% |
+| Hybrid, residual, default trees (depth 8) | 20% | 20% | 28% | 21% | 22% | 56% |
+| **Hybrid, residual, shallow trees** (depth 4, min_child_weight 50, L2 10, 400 trees) | **17%** | **12%** | 16% | **17%** | **17%** | **69%** |
+| XGBoost with physics as an extra input | 20% | 18% | 26% | 23% | 23% | 54% |
+| Physics where it has an answer, else XGBoost | 18% | 12% | 15% | 26% | 23% | 54% |
+| Average of the three ML models | 19% | 17% | 26% | 22% | 22% | 55% |
+
+**Conclusion:** how the physics is combined matters more than whether it's used. Given the physics prediction as just another input, XGBoost mostly ignores it (23%, same as without). Learning a *correction* to the physics works, but only if the correction is kept simple: deep trees overfit the residuals and wreck good physics predictions at 1–3 months (28% vs 16%), while shallow, regularized trees keep them and fix the far horizon (17% vs 26%). The shallow residual hybrid is better than every other option in every horizon but one.
