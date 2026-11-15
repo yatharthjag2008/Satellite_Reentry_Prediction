@@ -49,3 +49,52 @@ def orbit_averaged_rates(a_km, e, B, density, n_points=32):
     da = -(B[..., None] * rho * v**3 * a**2 / MU * weight).sum(-1)
     de = -(B[..., None] * rho * v * (ecc + cos_nu) * weight).sum(-1)
     return da * SECONDS_PER_DAY / 1e3, de * SECONDS_PER_DAY
+
+
+def propagate(a_km, e, B, density, max_days=3650.0, stop_altitude=120.0, max_step=30.0, step_km=3.0):
+    """Days until each orbit decays, integrating the orbit-averaged rates with RK4.
+
+    a_km, e, B: one value per object.
+    density(h_km, idx, t_days): air density for objects `idx` (indices into the
+        inputs, h_km of shape (len(idx), points)) at t_days after the start.
+    Reentry is when the apogee sinks to stop_altitude (the whole orbit is then in
+    dense air and the rest takes hours), or the perigee drops below 90 km.
+    Each step lowers the semi-major axis by at most about step_km and lasts at most
+    max_step days. Objects still up after max_days get NaN.
+    """
+    a = np.array(a_km, dtype=float, ndmin=1)
+    ecc = np.broadcast_to(np.asarray(e, float), a.shape).copy()
+    B = np.broadcast_to(np.asarray(B, float), a.shape)
+    t = np.zeros_like(a)
+    reentry = np.full_like(a, np.nan)
+    active = np.arange(len(a))
+
+    def rates(idx, a_, e_, t_):
+        return orbit_averaged_rates(a_, e_, B[idx], lambda h: density(h, idx, t_[:, None]))
+
+    def fallen(a_, e_):
+        return (a_ * (1 + e_) - R_EARTH <= stop_altitude) | (a_ * (1 - e_) - R_EARTH <= 90.0)
+
+    done = fallen(a, ecc)
+    reentry[done] = 0.0
+    active = active[~done]
+    while len(active):
+        a0, e0, t0 = a[active], ecc[active], t[active]
+        k1 = rates(active, a0, e0, t0)
+        dt = np.minimum(max_step, step_km / np.maximum(-k1[0], 1e-12))
+        dt = np.minimum(dt, max_days - t0)
+        k2 = rates(active, a0 + dt / 2 * k1[0], e0 + dt / 2 * k1[1], t0 + dt / 2)
+        k3 = rates(active, a0 + dt / 2 * k2[0], e0 + dt / 2 * k2[1], t0 + dt / 2)
+        k4 = rates(active, a0 + dt * k3[0], e0 + dt * k3[1], t0 + dt)
+        a1 = a0 + dt / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0])
+        e1 = np.clip(e0 + dt / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]), 0.0, 0.99)
+        t1 = t0 + dt
+
+        down = fallen(a1, e1)
+        # Time of reentry within the last step, interpolating the apogee linearly.
+        apo0, apo1 = a0 * (1 + e0) - R_EARTH, a1 * (1 + e1) - R_EARTH
+        frac = np.clip((apo0 - stop_altitude) / np.maximum(apo0 - apo1, 1e-12), 0.0, 1.0)
+        reentry[active[down]] = (t0 + frac * dt)[down]
+        a[active], ecc[active], t[active] = a1, e1, t1
+        active = active[~down & (t1 < max_days)]
+    return reentry

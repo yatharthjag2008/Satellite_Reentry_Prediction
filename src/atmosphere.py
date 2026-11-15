@@ -108,10 +108,12 @@ class MsisAtmosphere:
         profiles = profiles.T                                       # (objects, alt)
         alts = self.altitudes
 
-        def density(h_km):
+        def density(h_km, idx=None):
+            """idx picks which objects the rows of h_km belong to (default: all, in order)."""
             h_km = np.asarray(h_km, float)
             i_h, w_h = _bracket(h_km, alts)
-            obj = np.arange(len(profiles)).reshape((-1,) + (1,) * (h_km.ndim - 1))
+            obj = np.arange(len(profiles)) if idx is None else np.asarray(idx)
+            obj = obj.reshape((-1,) + (1,) * (h_km.ndim - 1))
             lo, hi = profiles[obj, i_h], profiles[obj, i_h + 1]
             return 10 ** (lo + w_h * (hi - lo))
 

@@ -3,7 +3,7 @@ import pytest
 from scipy.integrate import solve_ivp
 
 from atmosphere import ExponentialAtmosphere
-from orbit_decay import R_EARTH, circular_decay_rate, exponential_lifetime, orbit_averaged_rates
+from orbit_decay import R_EARTH, circular_decay_rate, exponential_lifetime, orbit_averaged_rates, propagate
 
 ATM = ExponentialAtmosphere(rho0=3.7e-12, h0=400.0, scale_height=60.0)
 B = 0.01  # m^2/kg, typical of a small satellite
@@ -62,3 +62,32 @@ def test_orbit_average_converges():
     fine = orbit_averaged_rates(a, e, B, ATM.density, n_points=1024)
     assert coarse[0] == pytest.approx(fine[0], rel=1e-3)
     assert coarse[1] == pytest.approx(fine[1], rel=1e-3)
+
+
+def exponential(atm):
+    return lambda h, idx, t: atm.density(h)
+
+
+def test_propagate_matches_exact_lifetime():
+    starts = np.array([200.0, 300.0, 400.0, 550.0])
+    days = propagate(R_EARTH + starts, 0.0, B, exponential(ATM), max_days=1e6)
+    exact = exponential_lifetime(starts, 120.0, B, ATM.rho0, ATM.h0, ATM.scale_height)
+    np.testing.assert_allclose(days, exact, rtol=2e-3)
+
+
+def test_propagate_lifetime_scales_as_one_over_B():
+    days = propagate(np.full(3, R_EARTH + 400.0), 0.001, [0.005, 0.01, 0.02], exponential(ATM), max_days=1e6)
+    np.testing.assert_allclose(days * [0.005, 0.01, 0.02], days[1] * 0.01, rtol=5e-3)
+
+
+def test_propagate_gives_nan_past_max_days():
+    days = propagate([R_EARTH + 400.0, R_EARTH + 900.0], 0.0, B, exponential(ATM), max_days=1000)
+    assert np.isfinite(days[0]) and np.isnan(days[1])
+
+
+def test_eccentric_orbit_lasts_longer_than_circular_at_same_perigee():
+    rp = R_EARTH + 300.0
+    a = np.array([rp, (rp + R_EARTH + 1000.0) / 2])
+    e = np.array([0.0, (a[1] - rp) / a[1]])
+    days = propagate(a, e, B, exponential(ATM), max_days=1e6)
+    assert days[1] > days[0]
