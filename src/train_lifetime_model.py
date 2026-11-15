@@ -8,7 +8,10 @@ the same fold), so no model is tested on a sibling of an object it trained on.
 Run lifetime_model.py first.
 
     python src/train_lifetime_model.py
+    python src/train_lifetime_model.py --time-split   # the time-split check (EXPERIMENTS.md 019)
 """
+
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -64,7 +67,36 @@ def plot(df, predictions, path):
     plt.close(fig)
 
 
+def time_split():
+    """A time split that is fair despite censoring.
+
+    Keep launches up to CUTOFF_LAUNCH whose objects lived at most MAX_LIFE years.
+    Every such object launched by then has reentered by 2026, so train (launched
+    before SPLIT) and test (launched SPLIT to CUTOFF_LAUNCH) are censored the same way.
+    """
+    SPLIT, CUTOFF_LAUNCH, MAX_LIFE = "2012-01-01", "2016-01-01", 10
+    df = load()
+    life_years = (df["DECAY_DATE"] - df["LAUNCH_DATE"]).dt.days / 365.25
+    df = df[(df["LAUNCH_DATE"] < CUTOFF_LAUNCH) & (life_years <= MAX_LIFE)].reset_index(drop=True)
+    train, test = df[df["LAUNCH_DATE"] < SPLIT], df[df["LAUNCH_DATE"] >= SPLIT]
+    print(f"train: {len(train):,} objects launched before {SPLIT[:4]}; test: {len(test):,} launched "
+          f"{SPLIT[:4]}-{int(CUTOFF_LAUNCH[:4]) - 1}; all lived at most {MAX_LIFE} years\n")
+    y = np.log10(train["days_left"])
+    booster = xgb.XGBRegressor(**XGB_PARAMS).fit(train[FEATURES], y)
+    hybrid = xgb.XGBRegressor(**HYBRID_PARAMS).fit(train[HYBRID_FEATURES], y - train["log_physics_days"])
+    predictions = {"physics (solar-cycle forecast)": test[PHYSICS].to_numpy(),
+                   "XGBoost": 10 ** booster.predict(test[FEATURES]),
+                   "physics + ML hybrid": test["physics_filled"].to_numpy() * 10 ** hybrid.predict(test[HYBRID_FEATURES])}
+    for group, mask in object_groups(test).items():
+        if mask.any():
+            print(f"{group} ({mask.sum():,} objects)")
+            print(error_by_band(test[mask], {k: v[mask] for k, v in predictions.items()})
+                  .to_string(float_format="{:.0%}".format) + "\n")
+
+
 def main():
+    if "--time-split" in sys.argv:
+        return time_split()
     df = load()
     print(f"{len(df):,} objects from {df['LAUNCH_DATE'].nunique():,} launches\n")
     xgb_pred, hybrid_pred = cross_validated(df)
