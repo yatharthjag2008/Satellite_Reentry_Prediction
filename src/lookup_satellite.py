@@ -3,7 +3,11 @@
 Type a name (e.g. ISS, HUBBLE, STARLINK-1007) or a NORAD catalog number.
 Partial names work; if several objects match you pick one from a list.
 For objects still in low orbit it offers a reentry prediction, which needs a
-Space-Track login in .env (see src/spacetrack.py) and the trained models.
+Space-Track login in .env (see src/spacetrack.py) and the trained models. The
+prediction uses whichever method tested best for how far away reentry is
+(src/predict_reentry.py): drag measured over the last 8 days within about 10
+days, the physics + ML hybrid with a 90% range out to two years, and the physics
+with a solar-cycle forecast beyond that.
 Press Enter on an empty line (or type q) to quit.
 
     python src/lookup_satellite.py
