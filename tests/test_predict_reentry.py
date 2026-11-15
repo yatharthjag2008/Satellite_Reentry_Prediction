@@ -55,3 +55,8 @@ def test_describe_explains_the_short_window_close_to_reentry():
 def test_describe_warns_that_satellites_can_reboost():
     assert "thrusters" in "\n".join(describe(result(is_payload=True)))
     assert "thrusters" not in "\n".join(describe(result(is_payload=False)))
+
+
+def test_describe_mentions_the_solar_cycle_for_long_predictions():
+    text = "\n".join(describe(result(physics_days=2600.0, hybrid_days=None, range=None, solar_cycle=True)))
+    assert "11-year cycle" in text and "7.1 years" in text

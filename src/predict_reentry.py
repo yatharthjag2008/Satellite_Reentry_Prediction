@@ -99,6 +99,10 @@ def predict(st, norad_id):
             result["physics_days"] = forecast(every.iloc[[-1]], np.array([B_short]), atm)[0]
             result["short_window"] = True
         return result
+    if (not np.isfinite(physics) or physics > 365) and latest["B_fit"].iloc[0] > 0:
+        # Over years the Sun's cycle matters: use the solar-cycle forecast instead (EXPERIMENTS.md 017).
+        result["physics_days"] = physics = years_ahead(latest, atm)
+        result["solar_cycle"] = True
     # The hybrid only learned from objects in their final year, so only trust it inside that range.
     if not np.isfinite(physics) or physics > 2 * 365:
         return result
@@ -110,6 +114,17 @@ def predict(st, norad_id):
     result["hybrid_days"] = days
     result["range"] = conformal_range(days, latest)
     return result
+
+
+def years_ahead(latest, atm):
+    """Days until reentry under the solar-cycle forecast and typical geomagnetic activity."""
+    from lifetime_model import MAX_MONTHS, monthly_weather, simulate, typical_ap
+    from solar_cycle import forecast_monthly
+
+    month = latest["EPOCH"].iloc[0].to_period("M").start_time
+    flux = forecast_monthly(month, MAX_MONTHS)[None, :]
+    ap = np.full_like(flux, typical_ap(monthly_weather()[1], month))
+    return simulate(latest.reset_index(drop=True), flux, ap, atm)[0]
 
 
 def describe(result):
@@ -130,6 +145,8 @@ def describe(result):
     when = "%Y-%m-%d %H:%M UTC" if physics < 3 else "%Y-%m-%d"
     end = result["epoch"] + pd.Timedelta(days=physics)
     lines.append(f"Physics model: about {_duration(physics)} (around {end:{when}})")
+    if result.get("solar_cycle"):
+        lines.append("(with a forecast of the Sun's 11-year cycle; a rough guide this far ahead)")
     if result.get("short_window"):
         lines.append(f"(drag measured over the last {SHORT_WINDOW} days of tracking: our most accurate")
         lines.append(" method this close to reentry; the official forecasts are better in the final day)")
