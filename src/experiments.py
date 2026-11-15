@@ -14,8 +14,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from train_reentry_model import (FEATURES, HORIZONS, HYBRID_FEATURES, XGB_PARAMS, load, predict_hybrid,
-                                 train_hybrid, train_xgboost)
+from train_reentry_model import (BASE_PARAMS, FEATURES, HORIZONS, HYBRID_FEATURES, UNTUNED_PARAMS, load,
+                                 predict_hybrid, train_hybrid, train_xgboost)
 
 VALIDATE_FROM = "2023-01-01"
 
@@ -53,15 +53,15 @@ def hybrid_variants():
     physics = val["physics_filled"].to_numpy()
     preds = {"physics": physics}
 
-    booster = train_xgboost(fit, FEATURES, y)
+    booster = train_xgboost(fit, FEATURES, y, UNTUNED_PARAMS)
     preds["XGBoost"] = 10 ** booster.predict(val[FEATURES])
-    preds["hybrid (residual, default)"] = predict_hybrid(train_hybrid(fit), val)
+    preds["hybrid (residual, default)"] = predict_hybrid(train_hybrid(fit, UNTUNED_PARAMS), val)
 
-    gentle = xgb.XGBRegressor(**{**XGB_PARAMS, "max_depth": 4, "min_child_weight": 50, "reg_lambda": 10.0,
+    gentle = xgb.XGBRegressor(**{**UNTUNED_PARAMS, "max_depth": 4, "min_child_weight": 50, "reg_lambda": 10.0,
                                  "n_estimators": 400}).fit(fit[HYBRID_FEATURES], residual)
     preds["hybrid (residual, shallow trees)"] = physics * 10 ** gentle.predict(val[HYBRID_FEATURES])
 
-    as_feature = train_xgboost(fit, HYBRID_FEATURES, y)
+    as_feature = train_xgboost(fit, HYBRID_FEATURES, y, UNTUNED_PARAMS)
     preds["XGBoost + physics as a feature"] = 10 ** as_feature.predict(val[HYBRID_FEATURES])
 
     trusted = (val["physics_days"].notna() & (val["is_starlink"] == 0)).to_numpy()
@@ -83,7 +83,7 @@ def hybrid_tuning():
     for depth in (2, 3, 4, 6):
         for min_child in (50, 500):
             for trees, rate in ((400, 0.05), (1000, 0.02)):
-                params = {**XGB_PARAMS, "max_depth": depth, "min_child_weight": min_child, "reg_lambda": 10.0,
+                params = {**BASE_PARAMS, "max_depth": depth, "min_child_weight": min_child, "reg_lambda": 10.0,
                           "n_estimators": trees, "learning_rate": rate}
                 model = xgb.XGBRegressor(**params).fit(fit[HYBRID_FEATURES], residual)
                 name = f"depth {depth}, min_child {min_child}, {trees} trees x {rate}"
@@ -98,10 +98,11 @@ def xgboost_tuning():
     fit, val = validation_split()
     truth = val["days_left"].to_numpy()
     y = np.log10(fit["days_left"])
-    preds = {"default (depth 8, 600 trees x 0.05)": 10 ** train_xgboost(fit, FEATURES, y).predict(val[FEATURES])}
+    untuned = train_xgboost(fit, FEATURES, y, UNTUNED_PARAMS)
+    preds = {"default (depth 8, 600 trees x 0.05)": 10 ** untuned.predict(val[FEATURES])}
     for depth in (3, 4, 6):
         for min_child in (50, 500):
-            params = {**XGB_PARAMS, "max_depth": depth, "min_child_weight": min_child, "reg_lambda": 10.0,
+            params = {**BASE_PARAMS, "max_depth": depth, "min_child_weight": min_child, "reg_lambda": 10.0,
                       "n_estimators": 400}
             model = xgb.XGBRegressor(**params).fit(fit[FEATURES], y)
             preds[f"depth {depth}, min_child {min_child}, 400 trees"] = 10 ** model.predict(val[FEATURES])

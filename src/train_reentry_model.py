@@ -47,8 +47,11 @@ GP_FEATURES = ["PERIAPSIS", "APOAPSIS", "perigee_rate_7d", "perigee_rate_30d", "
 GP_TRAIN_SIZE = 3000
 NO_PHYSICS_DAYS = 365  # used when the physics model has no answer (orbit raised, too few orbits, or 10+ years)
 HORIZONS = [(0, 7, "under 1 week"), (7, 30, "1-4 weeks"), (30, 90, "1-3 months"), (90, 366, "3-12 months")]
-XGB_PARAMS = dict(n_estimators=600, max_depth=8, learning_rate=0.05, subsample=0.8,
-                  colsample_bytree=0.8, tree_method="hist", n_jobs=-1)
+BASE_PARAMS = dict(learning_rate=0.05, subsample=0.8, colsample_bytree=0.8, tree_method="hist", n_jobs=-1)
+UNTUNED_PARAMS = {**BASE_PARAMS, "n_estimators": 600, "max_depth": 8}  # the original settings (experiment 001)
+# Chosen on the 2023 validation year (EXPERIMENTS.md 006-007): shallow, regularized trees generalize far better.
+XGB_PARAMS = {**BASE_PARAMS, "n_estimators": 400, "max_depth": 3, "min_child_weight": 50, "reg_lambda": 10.0}
+HYBRID_PARAMS = {**BASE_PARAMS, "n_estimators": 400, "max_depth": 4, "min_child_weight": 50, "reg_lambda": 10.0}
 
 
 def load(test_from=TEST_FROM, verbose=True):
@@ -83,15 +86,15 @@ def rule_of_thumb(df):
     return days.where(rate < 0).clip(0.1, 3650).fillna(365)  # not sinking: guess a year
 
 
-def train_xgboost(train, features, target):
-    booster = xgb.XGBRegressor(**XGB_PARAMS)
+def train_xgboost(train, features, target, params=XGB_PARAMS):
+    booster = xgb.XGBRegressor(**params)
     booster.fit(train[features], target)
     return booster
 
 
-def train_hybrid(train):
+def train_hybrid(train, params=HYBRID_PARAMS):
     """XGBoost on log10(actual / physics): it learns a correction factor for the physics prediction."""
-    return train_xgboost(train, HYBRID_FEATURES, np.log10(train["days_left"] / train["physics_filled"]))
+    return train_xgboost(train, HYBRID_FEATURES, np.log10(train["days_left"] / train["physics_filled"]), params)
 
 
 def predict_hybrid(booster, df):
