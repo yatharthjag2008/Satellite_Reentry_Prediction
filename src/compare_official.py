@@ -11,14 +11,18 @@ within an hour of reentry are left out.
 
 Run download_tip.py and train_reentry_model.py first.
 
-    python src/compare_official.py
+    python src/compare_official.py           # one orbit a day, as in the training table
+    python src/compare_official.py --fresh   # every orbit (run download_final_orbits.py first)
 """
+
+import sys
 
 import numpy as np
 import pandas as pd
 import xgboost as xgb
 
 from atmosphere import MsisAtmosphere
+from download_final_orbits import OUT_FILE as FINAL_ORBITS_FILE
 from download_tip import OUT_FILE as TIP_FILE
 from physics_model import fit_drag_parameter, forecast, prepare, unit_decay_rate
 from train_reentry_model import (DATA_FILE, FEATURES, HYBRID_FEATURES, MODELS_DIR, NO_PHYSICS_DAYS, RESULTS_DIR,
@@ -37,14 +41,32 @@ def official_messages():
     return tip[tip["lead_days"] > 1 / 24]
 
 
-def our_predictions(tip):
-    """Physics, XGBoost and hybrid predictions from the latest orbit before each message."""
+def daily_orbits(tip, atm):
+    """The training table's orbits (one a day) for the objects with official messages."""
     df = pd.read_parquet(DATA_FILE)
-    df = df[(df["DECAY_DATE"] >= TEST_FROM) & df["NORAD_CAT_ID"].isin(tip["NORAD_CAT_ID"])]
-    atm = MsisAtmosphere()
-    df = prepare(df)
+    df = prepare(df[(df["DECAY_DATE"] >= TEST_FROM) & df["NORAD_CAT_ID"].isin(tip["NORAD_CAT_ID"])])
     df["B_fit"], df["n_fit"] = fit_drag_parameter(df, unit_decay_rate(df, atm))
+    return df
 
+
+def fresh_orbits(atm):
+    """Every orbit from the final weeks, with the same features as the training table.
+
+    B is still fitted on one orbit a day, as in training (the hybrid uses the number
+    of orbits in the fit as an input), and each orbit takes the latest daily fit.
+    """
+    from predict_reentry import features
+
+    orbits = features(pd.read_parquet(FINAL_ORBITS_FILE))
+    orbits["day"] = orbits["EPOCH"].dt.floor("D")
+    daily = prepare(orbits.groupby(["NORAD_CAT_ID", "day"]).tail(1))
+    daily["B_fit"], daily["n_fit"] = fit_drag_parameter(daily, unit_decay_rate(daily, atm))
+    return pd.merge_asof(orbits.sort_values("EPOCH"), daily[["NORAD_CAT_ID", "EPOCH", "B_fit", "n_fit"]]
+                         .sort_values("EPOCH"), on="EPOCH", by="NORAD_CAT_ID", direction="backward")
+
+
+def our_predictions(tip, df, atm):
+    """Physics, XGBoost and hybrid predictions from the latest orbit before each message."""
     matched = pd.merge_asof(tip.sort_values("MSG_EPOCH"), df.sort_values("EPOCH"), left_on="MSG_EPOCH",
                             right_on="EPOCH", by="NORAD_CAT_ID", direction="backward")
     matched = matched[(matched["MSG_EPOCH"] - matched["EPOCH"]).dt.total_seconds() / 86400 <= MAX_ORBIT_AGE]
@@ -69,9 +91,11 @@ def our_predictions(tip):
 
 
 def main():
+    fresh = "--fresh" in sys.argv
     tip = official_messages()
     print(f"{len(tip):,} official predictions for {tip['NORAD_CAT_ID'].nunique():,} objects")
-    m = our_predictions(tip)
+    atm = MsisAtmosphere()
+    m = our_predictions(tip, fresh_orbits(atm) if fresh else daily_orbits(tip, atm), atm)
     m = m.rename(columns={"DECAY_EPOCH": "official"})
     print(f"{len(m):,} have one of our orbits from within {MAX_ORBIT_AGE:.0f} days before\n")
 
@@ -91,7 +115,7 @@ def main():
     fmt = {c: ("{:.0f}".format if c in ("messages", "objects") else "{:.1f}".format if "hours" in c
                else "{:.0%}".format) for c in table.columns}
     print(table.to_string(formatters=fmt))
-    table.to_csv(RESULTS_DIR / "official_comparison.csv", float_format="%.4f")
+    table.to_csv(RESULTS_DIR / f"official_comparison{'_fresh' if fresh else ''}.csv", float_format="%.4f")
 
     inside = (m["reentry"] - m["official"]).abs().dt.total_seconds() / 60 <= m["WINDOW"]
     print(f"\nthe true reentry falls inside the official +/- window for {inside.mean():.0%} of messages")
