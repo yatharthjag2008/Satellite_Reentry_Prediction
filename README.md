@@ -28,7 +28,7 @@ On objects that reentered from 2024 onward, which no model saw during training (
 - **Calibrated uncertainty.** Conformal prediction gives a 90% range around each prediction, recalibrated monthly on recent reentries; it contains the truth 89% of the time.
 - **Against the official US Space Force predictions:** given equally fresh orbits, the physics model is 28% more accurate than the official forecasts from 4+ days out, and within 1.2× of them 2–4 days out; in the final day the official forecasts, with dense radar tracking, are far better. See [below](#against-the-official-predictions).
 
-Every number comes from [`EXPERIMENTS.md`](EXPERIMENTS.md), a numbered log of 19 experiments, with every model setting chosen on a 2023 validation year rather than the test set.
+Every number comes from [`EXPERIMENTS.md`](EXPERIMENTS.md), a numbered log of 20 experiments, with every model setting chosen on a 2023 validation year rather than the test set.
 
 ### Whole lifetimes from the first month (Part 1)
 
