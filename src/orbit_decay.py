@@ -28,3 +28,24 @@ def exponential_lifetime(h_start, h_end, B, rho0, h0, scale_height):
     a0, ai, af = [(R_EARTH + h) * 1e3 for h in (h0, h_start, h_end)]
     term = lambda a: np.exp((a - a0) / H) * dawsn(np.sqrt(a / H))
     return 2 * np.sqrt(H) / (B * rho0 * np.sqrt(MU)) * (term(ai) - term(af)) / SECONDS_PER_DAY
+
+
+def orbit_averaged_rates(a_km, e, B, density, n_points=32):
+    """Orbit-averaged (da/dt in km/day, de/dt per day) for drag on an elliptical orbit.
+
+    Inputs can be arrays (one orbit per element). `density(h_km)` gives kg/m^3.
+    Averages over the mean anomaly by sampling the eccentric anomaly E evenly and
+    weighting by dM/dE = 1 - e cos E (docs/derivation.md, sections 4 and 5).
+    """
+    a_km, e, B = np.broadcast_arrays(*[np.asarray(x, dtype=float) for x in (a_km, e, B)])
+    E = (np.arange(n_points) + 0.5) * 2 * np.pi / n_points
+    a, ecc = a_km[..., None] * 1e3, e[..., None]
+    one_minus = 1 - ecc * np.cos(E)
+    r = a * one_minus
+    v = np.sqrt(MU * (2 / r - 1 / a))
+    cos_nu = (np.cos(E) - ecc) / one_minus
+    rho = density(r / 1e3 - R_EARTH)
+    weight = one_minus / n_points  # dM / (2 pi), with sum(dM) over the orbit = 2 pi
+    da = -(B[..., None] * rho * v**3 * a**2 / MU * weight).sum(-1)
+    de = -(B[..., None] * rho * v * (ecc + cos_nu) * weight).sum(-1)
+    return da * SECONDS_PER_DAY / 1e3, de * SECONDS_PER_DAY
