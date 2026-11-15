@@ -108,3 +108,8 @@ def test_drag_rates_converge_for_a_transfer_orbit():
     fine = orbit_averaged_rates(a, e, B, ATM.density, n_points=8192)
     assert auto[0][0] == pytest.approx(fine[0], rel=1e-4)
     assert auto[1][0] == pytest.approx(fine[1], rel=1e-4)
+
+
+def test_huge_drag_parameter_reenters_instead_of_failing():
+    days = propagate([R_EARTH + 130.0, R_EARTH + 400.0], 0.0, [1e4, B], exponential(ATM))
+    assert days[0] < 0.01 and np.isfinite(days[1])

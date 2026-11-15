@@ -59,6 +59,7 @@ def points_needed(a_km, e, scale_height=40.0):
     so near-circular orbits need 8 points and very stretched ones a few hundred.
     """
     z = np.asarray(a_km) * np.asarray(e) / scale_height
+    z = np.where(np.isfinite(z) & (z > 0), z, 0.0)
     n = 6 * np.pi * np.sqrt(z / 2) + 1
     return np.clip(2 ** np.ceil(np.log2(n)), 8, 1024).astype(int)
 
@@ -101,7 +102,9 @@ def propagate(a_km, e, B, density, max_days=3650.0, stop_altitude=120.0, max_ste
         return drag_rates(a_, e_, B[idx], lambda h, rows: density(h, idx[rows], t_[rows, None]))
 
     def fallen(a_, e_):
-        return (a_ * (1 + e_) - R_EARTH <= stop_altitude) | (a_ * (1 - e_) - R_EARTH <= 90.0)
+        # A step can overshoot into an impossible orbit (NaN) when an object is already falling fast.
+        return ((a_ * (1 + e_) - R_EARTH <= stop_altitude) | (a_ * (1 - e_) - R_EARTH <= 90.0)
+                | ~np.isfinite(a_) | ~np.isfinite(e_))
 
     done = fallen(a, ecc)
     reentry[done] = 0.0
@@ -125,6 +128,7 @@ def propagate(a_km, e, B, density, max_days=3650.0, stop_altitude=120.0, max_ste
         # Time of reentry within the last step, interpolating the apogee linearly.
         apo0, apo1 = a0 * (1 + e0) - R_EARTH, a1 * (1 + e1) - R_EARTH
         frac = np.clip((apo0 - stop_altitude) / np.maximum(apo0 - apo1, 1e-12), 0.0, 1.0)
+        frac = np.where(np.isfinite(frac), frac, 1.0)
         reentry[active[down]] = (t0 + frac * dt)[down]
         a[active], ecc[active], t[active] = a1, e1, t1
         active = active[~down & (t1 < max_days)]
