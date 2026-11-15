@@ -2,6 +2,8 @@
 
 Type a name (e.g. ISS, HUBBLE, STARLINK-1007) or a NORAD catalog number.
 Partial names work; if several objects match you pick one from a list.
+For objects still in low orbit it offers a reentry prediction, which needs a
+Space-Track login in .env (see src/spacetrack.py) and the trained models.
 Press Enter on an empty line (or type q) to quit.
 
     python src/lookup_satellite.py
@@ -16,6 +18,7 @@ import pandas as pd
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 R_EARTH = 6378.137  # km
 MAX_LISTED = 20
+PREDICT_BELOW = 1000  # km perigee: higher objects stay up for centuries
 
 OBJECT_TYPES = {"PAY": "payload (satellite)", "R/B": "rocket body", "DEB": "debris", "UNK": "unknown"}
 OPS_STATUS = {
@@ -146,12 +149,51 @@ def show(row, f107_81d):
     print()
 
 
+def can_predict(row):
+    return (pd.isna(row["DECAY_DATE"]) and row["ORBIT_CENTER"] == "EA" and pd.notna(row["PERIGEE"])
+            and row["PERIGEE"] < PREDICT_BELOW)
+
+
+class Predictor:
+    """Logs in to Space-Track the first time a prediction is asked for, and reuses the session."""
+
+    def __init__(self):
+        self.st = None
+
+    def show(self, row):
+        try:
+            import predict_reentry
+            from spacetrack import SpaceTrack
+            if self.st is None:
+                print(" Logging in to Space-Track...")
+                self.st = SpaceTrack()
+            print(" Fetching its recent orbits...")
+            lines = predict_reentry.describe(predict_reentry.predict(self.st, int(row["NORAD_CAT_ID"])))
+        except (SystemExit, ImportError, OSError) as error:  # no .env, no models, no network
+            lines = [f"Can't predict: {error}"]
+        print("\n REENTRY PREDICTION")
+        for line in lines:
+            print(" " + line)
+        print()
+
+    def close(self):
+        if self.st is not None:
+            self.st.close()
+
+
 def main():
     print("Loading catalog...")
     satcat = load_catalog()
     f107_81d = load_space_weather()
     print(f"{len(satcat):,} objects loaded. Type a name or NORAD ID (Enter or q to quit).")
+    predictor = Predictor()
+    try:
+        search(satcat, f107_81d, predictor)
+    finally:
+        predictor.close()
 
+
+def search(satcat, f107_81d, predictor):
     while True:
         query = input("\nSearch: ").strip()
         if query.lower() in ("", "q", "quit", "exit"):
@@ -169,6 +211,8 @@ def main():
             row = matches.iloc[0] if len(matches) == 1 else choose(matches)
         if row is not None:
             show(row, f107_81d)
+            if can_predict(row) and input("Predict when it will reenter? [y/N] ").strip().lower() == "y":
+                predictor.show(row)
 
 
 if __name__ == "__main__":
