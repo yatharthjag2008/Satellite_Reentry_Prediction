@@ -115,3 +115,27 @@ $$r = a(1 - e\cos E), \qquad \cos\nu = \frac{\cos E - e}{1 - e\cos E}$$
 The code evaluates the integrand at evenly spaced values of E. For a smooth periodic function, this simple rule converges very fast.
 
 **Left out on purpose.** The atmosphere rotates with Earth, which changes the air speed seen by the satellite by a few percent, and Earth's equatorial bulge means a fixed distance r is a different altitude at different latitudes. Both effects change the overall drag by a roughly constant factor for each object, so they are absorbed into the fitted value of B.
+
+## 6. Estimating B from the observed decay
+
+B is unknown for almost every object, and even for satellites with a known size and mass it changes as they tumble. But B can be measured from the orbit history. Every rate in sections 2–5 is proportional to B, so write
+
+$$\frac{da}{dt} = B\,g(a, e, \text{space weather}), \qquad g = \text{the orbit-averaged rate with } B = 1$$
+
+Along the *observed* orbits, integrating from the start of a window t₀ gives
+
+$$a(t) - a(t_0) = B \int_{t_0}^{t} g\big(a_{obs}(s), e_{obs}(s), \text{weather}(s)\big)\, ds \equiv B\,G(t)$$
+
+G(t) is computed from the observed orbits and the recorded space weather alone, so no simulation is needed, and the observed a(t) should be a straight line in G with slope B. A least-squares fit over the window
+
+$$B = \frac{\operatorname{cov}(a, G)}{\operatorname{var}(G)}$$
+
+is then a single pass of running sums for every object and day. The semi-major axis comes from the mean motion n in each orbit record through Kepler's third law, a = (μ/n²)^{1/3}.
+
+A negative B means the orbit grew over the window, which drag can't do. That signals a maneuver (or a bad orbit record), and the physics prediction is skipped for that row.
+
+## 7. Predicting forward
+
+From the latest orbit, with the fitted B, the code integrates the averaged equations forward until the apogee sinks to 120 km (section 5). Below that, the rest of the fall takes hours, which is less than the one-day precision of the recorded reentry dates.
+
+The future air density depends on future solar activity, which isn't known at prediction time. The baseline holds today's 81-day solar flux and recent geomagnetic activity fixed, and uses the year-averaged density. Section 2 showed that the time to fall scales as 1/B for a fixed atmosphere, so the uncertainty in B and in the weather forecast are the two main sources of error, and the experiment log measures each.
