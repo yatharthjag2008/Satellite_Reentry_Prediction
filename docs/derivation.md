@@ -139,3 +139,11 @@ A negative B means the orbit grew over the window, which drag can't do. That sig
 From the latest orbit, with the fitted B, the code integrates the averaged equations forward until the apogee sinks to 120 km (section 5). Below that, the rest of the fall takes hours, which is less than the one-day precision of the recorded reentry dates.
 
 The future air density depends on future solar activity, which isn't known at prediction time. The baseline holds today's 81-day solar flux and recent geomagnetic activity fixed, and uses the year-averaged density. Section 2 showed that the time to fall scales as 1/B for a fixed atmosphere, so the uncertainty in B and in the weather forecast are the two main sources of error, and the experiment log measures each.
+
+## 8. Lifetimes of several years (Part 1)
+
+Part 1 predicts the whole lifetime from an object's first weeks in orbit. The physics is the same, but two things change.
+
+**The weather can't be held fixed.** Over several years the Sun goes through a large part of its 11-year cycle, and the density at 500 km changes about tenfold between solar minimum and maximum. So the simulation uses a forecast of the 81-day solar flux month by month ([`src/solar_cycle.py`](../src/solar_cycle.py)): the average shape of past cycles, scaled to how strong the current cycle has been so far, using only data from before the prediction date. With time-varying density, the 1/B scaling of section 2 no longer gives the lifetime in closed form, so every object is simulated with its own fitted B.
+
+**B is less certain.** The fit window (days 10–40 after launch) is chosen so that deployment and early maneuvers are mostly over, but at 500 km a month of decay is small, so B is noisier than near reentry. Because the lifetime is proportional to 1/B for a fixed atmosphere, a 20% error in B gives roughly a 20% error in lifetime: B's uncertainty passes straight through.
