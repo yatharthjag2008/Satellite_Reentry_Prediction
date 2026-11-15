@@ -231,3 +231,36 @@ A 4-day window does about as well as 8 days; 2 days gets worse further out, and 
 3. **Starlink** lives 1.5× longer than its drag suggests, because satellites keep holding altitude for a while. The hybrid only learns part of this (1.15×), as the timing is the operator's choice.
 
 The 0.55 for physics predictions over a year is partly an artifact: every row in the table is within a year of reentry, so a long physics prediction can only ever be too long. The hybrid learns that too, which is harmless here but means it shouldn't be used beyond a year (the lookup tool doesn't).
+
+## 017: Part 1 physics, from the first 40 days to reentry
+
+**Setup:** `lifetime_model.py`. For 4,948 satellites and rocket bodies launched since 2000 that have reentered, fit B from orbits 10–40 days after launch, then simulate from about day 40 to reentry under three assumptions about the Sun. Debris is excluded (its catalog launch date is its parent's). Of these, 2,982 (60%) get a positive B; the rest were still raising their orbits or the decay was too small to measure. Scores below are for those 2,982.
+
+| Future solar flux | < 1 year | 1–3 years | 3–10 years | 10+ years | Overall | Within 25% |
+|---|---|---|---|---|---|---|
+| Today's held fixed | 57% | 54% | 247% | 62% | 84% | 23% |
+| **Solar-cycle forecast** (`solar_cycle.py`) | 56% | 31% | 20% | 30% | **29%** | 46% |
+| Actual flux (perfect forecast) | 53% | 16% | 20% | 18% | 20% | 58% |
+
+By group (solar-cycle forecast): near-circular rocket bodies 21%, near-circular satellites 25%, rocket bodies in transfer orbits 528%, Starlink 96%.
+
+**Conclusion:** for multi-year lifetimes the solar cycle is everything. Holding today's flux fixed gives 84% error (247% for 3–10 years, where an object launched near solar minimum sees a whole maximum); the cycle forecast cuts that to 29%, close to the 20% a perfect forecast would give. With it, the physics predicts the lifetime of near-circular objects to about 20–25% from a single month of tracking, years in advance. It fails for transfer orbits (lunisolar perturbations, derivation section 9) and for Starlink, whose lifetime is set by the operator.
+
+## 018: Part 1 physics vs. ML vs. hybrid
+
+**Setup:** `train_lifetime_model.py`, all 4,948 objects (no-answer physics falls back to 30 years). XGBoost and the hybrid use the same tuned settings as Part 2, with the early orbit, BSTAR, radar size, object type, fitted B and (hybrid) the solar-cycle physics prediction. Because every object here has reentered, a time split would be biased (only short-lived objects from recent launches are down yet), so the models are **cross-validated by launch**: 5 folds, with all objects from one launch date in the same fold.
+
+| Model | < 1 year | 1–3 years | 3–10 years | 10+ years | Overall | Within 25% |
+|---|---|---|---|---|---|---|
+| Physics, solar-cycle forecast | 749% | 55% | 404% | 49% | 139% | 28% |
+| XGBoost | 60% | 24% | 24% | 44% | 29% | 44% |
+| **Physics + ML hybrid** | 56% | 23% | 22% | 36% | **26%** | **49%** |
+
+| Group (overall) | Physics | XGBoost | Hybrid |
+|---|---|---|---|
+| Rocket bodies, near-circular | 24% | 36% | 25% |
+| Rocket bodies, transfer orbits | 533% | 68% | 71% |
+| Satellites (not Starlink), near-circular | 30% | 26% | **22%** |
+| Starlink | 698% | 29% | **28%** |
+
+**Conclusion:** the same pattern as Part 2. The hybrid is best overall (26%) because it takes the physics where the physics works and falls back on learned patterns where it doesn't: for Starlink, the ML learns that operators keep them up about five years, which no drag model can know. For near-circular rocket bodies, which nothing steers, the physics alone is already as good as anything (24%). The caveat is the validation: cross-validating by launch keeps sibling objects apart but doesn't test on a later time period, so these numbers are likely somewhat optimistic for the ML models (not for the physics, which isn't trained).
