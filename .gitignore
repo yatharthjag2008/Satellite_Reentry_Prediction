@@ -7,3 +7,4 @@ data/collect_log.txt
 data/spacetrack/
 models/
 data/msis_density_table.npz
+_site/
