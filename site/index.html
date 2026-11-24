@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Satellite Reentry Prediction</title>
+<meta name="description" content="Predicting when satellites and space debris fall back to Earth, with a drag physics model and machine learning. Look up any of about 71,000 tracked objects.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='%23e8590c'/%3E%3Cellipse cx='16' cy='16' rx='15' ry='5' fill='none' stroke='%23e8590c' stroke-width='2' transform='rotate(-25 16 16)'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Physics + machine learning</p>
+    <h1>Satellite Reentry Prediction</h1>
+    <p class="lede">Given an object's recent orbits and the space weather, how many days until it falls back into Earth's atmosphere?</p>
+    <dl class="stats">
+      <div><dt>median error</dt><dd>16%</dd></div>
+      <div><dt>predictions within 25%</dt><dd>67%</dd></div>
+      <div><dt>90% ranges that contain the truth</dt><dd>89%</dd></div>
+      <div><dt>reentered objects tested</dt><dd>4,897</dd></div>
+    </dl>
+    <nav class="links">
+      <a href="#lookup">Look up an object</a>
+      <a href="#results">Results</a>
+      <a href="#how">How it works</a>
+      <a href="https://github.com/yatharthjag2008/Satellite_Reentry_Prediction">Code on GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="lookup">
+    <h2>Look up any tracked object</h2>
+    <p>Search the public satellite catalog by name or NORAD ID. Partial names work.</p>
+    <form id="search-form" role="search" autocomplete="off">
+      <label for="q" class="visually-hidden">Name or NORAD ID</label>
+      <input id="q" type="search" placeholder="ISS (ZARYA), HST, starlink, 25544" disabled>
+    </form>
+    <p id="status" class="status" aria-live="polite">Loading the catalog…</p>
+    <ol id="matches" class="matches"></ol>
+    <article id="detail" class="detail" hidden></article>
+  </section>
+
+  <section id="results">
+    <h2>Results</h2>
+    <p>Median error relative to the true time left, on objects that reentered from 2024 on, which no model saw in training. Lower is better.</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th scope="col">Model</th><th scope="col">&lt; 1 week</th><th scope="col">1–4 weeks</th><th scope="col">1–3 months</th><th scope="col">3–12 months</th><th scope="col">Overall</th><th scope="col">Within 25%</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Rule of thumb <span class="sub">current sinking rate continues</span></th><td>522%</td><td>389%</td><td>395%</td><td>444%</td><td>427%</td><td>7%</td></tr>
+          <tr><th scope="row">Physics only <span class="sub">drag simulation, no training</span></th><td>22%</td><td>17%</td><td>21%</td><td>25%</td><td>24%</td><td>52%</td></tr>
+          <tr><th scope="row">XGBoost <span class="sub">tuned</span></th><td>27%</td><td class="best">15%</td><td>19%</td><td>19%</td><td>19%</td><td>63%</td></tr>
+          <tr><th scope="row">Gaussian process</th><td>24%</td><td>18%</td><td>25%</td><td>23%</td><td>23%</td><td>54%</td></tr>
+          <tr class="highlight"><th scope="row">Physics + ML hybrid</th><td class="best">21%</td><td>16%</td><td class="best">18%</td><td class="best">16%</td><td class="best">16%</td><td class="best">67%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ul class="findings">
+      <li><strong>The hybrid is the most accurate model</strong> overall and for every object type: 15% for debris and rocket bodies, 11% for ordinary satellites, 28% for Starlink, whose reentries the operator chooses.</li>
+      <li><strong>The physics alone is almost as good as XGBoost.</strong> It uses one fitted number per object and no training, and it beats XGBoost in the final week.</li>
+      <li><strong>It holds across the solar cycle.</strong> Retrained and tested year by year since 2005, the hybrid is best or tied in 20 of 22 years.</li>
+      <li><strong>Its ranges are honest.</strong> Conformal prediction gives a 90% range around each prediction; it contains the truth 89% of the time.</li>
+    </ul>
+
+    <div class="plots">
+      <figure>
+        <a href="plots/error_by_horizon.png"><img src="plots/error_by_horizon.png" alt="Median error of each model by time left until reentry" loading="lazy"></a>
+        <figcaption>Error by time left until reentry</figcaption>
+      </figure>
+      <figure>
+        <a href="plots/predicted_vs_actual.png"><img src="plots/predicted_vs_actual.png" alt="Predicted against actual days until reentry for the test objects" loading="lazy"></a>
+        <figcaption>Predicted vs. actual days until reentry</figcaption>
+      </figure>
+      <figure>
+        <a href="plots/backtest_by_year.png"><img src="plots/backtest_by_year.png" alt="Median error of each model, retrained and tested year by year since 2005" loading="lazy"></a>
+        <figcaption>Year-by-year backtest since 2005</figcaption>
+      </figure>
+      <figure>
+        <a href="plots/lifetime_predicted_vs_actual.png"><img src="plots/lifetime_predicted_vs_actual.png" alt="Predicted against actual lifetime from the first month in orbit" loading="lazy"></a>
+        <figcaption>Whole lifetimes from the first month in orbit</figcaption>
+      </figure>
+    </div>
+
+    <h3>Whole lifetimes from the first month</h3>
+    <p>From only an object's orbits 10–40 days after launch, the physics model with a forecast of the Sun's 11-year cycle predicts how long it will stay up, often years ahead. Median error on 2,982 satellites and rocket bodies launched since 2000:</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th scope="col">Future solar flux</th><th scope="col">1–3 years left</th><th scope="col">3–10 years left</th><th scope="col">Overall</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Today's held fixed</th><td>54%</td><td>247%</td><td>84%</td></tr>
+          <tr class="highlight"><th scope="row">Solar-cycle forecast</th><td>31%</td><td class="best">20%</td><td class="best">29%</td></tr>
+          <tr class="muted"><th scope="row">Perfect forecast <span class="sub">upper bound</span></th><td>16%</td><td>20%</td><td>20%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Against the official predictions</h3>
+    <p>The US Space Force issues Tracking and Impact Prediction (TIP) messages for objects in their final days. For about 10,000 messages on 1,900 objects that reentered from 2024 on, our model predicted from our latest orbit at the moment each message was issued. Median error of the predicted reentry time:</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th scope="col">Made before reentry</th><th scope="col">Official</th><th scope="col">Physics, one orbit a day</th><th scope="col">Physics, fresh orbits, 8-day drag fit</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Under 1 day</th><td class="best">0.7 h</td><td>4.1 h</td><td>1.6 h</td></tr>
+          <tr><th scope="row">1–2 days</th><td class="best">3.7 h</td><td>9.0 h</td><td>6.4 h</td></tr>
+          <tr><th scope="row">2–4 days</th><td class="best">7.8 h</td><td>13.6 h</td><td>9.5 h</td></tr>
+          <tr><th scope="row">4+ days</th><td>37.1 h</td><td>37.3 h</td><td class="best">26.7 h</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Given equally fresh orbits, the physics model is 28% more accurate than the official forecasts from 4+ days out. In the final day, the official forecasts, with dense radar tracking, are far better.</p>
+  </section>
+
+  <section id="how">
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li>
+        <h3>Data</h3>
+        <p>The final year of orbits for 17,558 objects that reentered since 2000, from Space-Track, turned into one row per object per day with its sinking rate, the solar flux and geomagnetic activity known that day, and the true days left.</p>
+      </li>
+      <li>
+        <h3>Physics</h3>
+        <p>Drag shrinks the orbit as da/dt = −Bρ√(μa). The air density ρ comes from the NRLMSIS 2.1 atmosphere model. Each object's drag parameter B is fitted from how its orbit actually sank over the past month, then the orbit is simulated forward until it reenters. <a href="https://github.com/yatharthjag2008/Satellite_Reentry_Prediction/blob/main/docs/derivation.md">The derivation</a></p>
+      </li>
+      <li>
+        <h3>Hybrid</h3>
+        <p>XGBoost learns a correction factor to the physics from the orbit, space weather and object type. Where the physics can't answer, such as a satellite holding its altitude with thrusters, the machine learning takes over.</p>
+      </li>
+      <li>
+        <h3>Uncertainty</h3>
+        <p>Conformal prediction turns past errors into a 90% range for each band of predicted days and each object group, recalibrated monthly on recent reentries.</p>
+      </li>
+    </ol>
+    <p>Every number on this page comes from <a href="https://github.com/yatharthjag2008/Satellite_Reentry_Prediction/blob/main/EXPERIMENTS.md">a log of 20 experiments</a>, with every setting chosen on a 2023 validation year rather than the test set.</p>
+  </section>
+
+  <section id="run">
+    <h2>Live predictions</h2>
+    <p>Predicting a reentry needs an object's latest orbits from <a href="https://www.space-track.org">Space-Track.org</a>, whose terms don't allow republishing its data. So live predictions run in the lookup tool on your own computer, with your own free Space-Track account. See the <a href="https://github.com/yatharthjag2008/Satellite_Reentry_Prediction#quick-start">quick start</a>.</p>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Catalog and space weather from <a href="https://celestrak.org">CelesTrak</a>, maintained by Dr. T.S. Kelso. Orbit histories and official reentry predictions used for training from <a href="https://www.space-track.org">Space-Track.org</a> (US Space Force); not republished here. Atmospheric density from NRLMSIS 2.1 (US Naval Research Laboratory) through <a href="https://github.com/SWxTREC/pymsis">pymsis</a>.</p>
+    <p id="catalog-date"></p>
+  </div>
+</footer>
+
+<script src="app.js" defer></script>
+</body>
+</html>
