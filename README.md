@@ -1,10 +1,10 @@
 # Satellite Reentry Prediction
 
+**🔗 Live site: [yatharthjag2008.github.io/Satellite_Reentry_Prediction](https://yatharthjag2008.github.io/Satellite_Reentry_Prediction/)**. Look up any of the ~71,000 tracked objects and see the results in your browser.
+
 [![tests](https://github.com/yatharthjag2008/Satellite_Reentry_Prediction/actions/workflows/tests.yml/badge.svg)](https://github.com/yatharthjag2008/Satellite_Reentry_Prediction/actions/workflows/tests.yml)
 
 **Given an object's recent orbits and the space weather, how many days until it falls back into Earth's atmosphere?**
-
-**Website:** [yatharthjag2008.github.io/Satellite_Reentry_Prediction](https://yatharthjag2008.github.io/Satellite_Reentry_Prediction/). Look up any of the ~71,000 tracked objects and see the results in your browser.
 
 Reentry is hard to predict because the upper atmosphere keeps changing: when the Sun is active, it heats and expands the air, increasing drag on everything in low orbit. This project combines a **physics model of atmospheric drag**, derived from first principles and driven by the NRLMSIS 2.1 atmosphere, with **machine learning that learns to correct the physics**. It is trained on the final year of orbits of 17,558 objects that reentered since 2000 and tested on 4,897 objects that reentered from 2024 on.
 
