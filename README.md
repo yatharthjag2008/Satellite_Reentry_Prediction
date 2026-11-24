@@ -4,6 +4,8 @@
 
 **Given an object's recent orbits and the space weather, how many days until it falls back into Earth's atmosphere?**
 
+**Website:** [yatharthjag2008.github.io/Satellite_Reentry_Prediction](https://yatharthjag2008.github.io/Satellite_Reentry_Prediction/). Look up any of the ~71,000 tracked objects and see the results in your browser.
+
 Reentry is hard to predict because the upper atmosphere keeps changing: when the Sun is active, it heats and expands the air, increasing drag on everything in low orbit. This project combines a **physics model of atmospheric drag**, derived from first principles and driven by the NRLMSIS 2.1 atmosphere, with **machine learning that learns to correct the physics**. It is trained on the final year of orbits of 17,558 objects that reentered since 2000 and tested on 4,897 objects that reentered from 2024 on.
 
 ## Results
@@ -75,6 +77,7 @@ The physics code is tested against exact answers: in an exponential atmosphere t
 | [`src/analyze_errors.py`](src/analyze_errors.py) | Breaks down where the first XGBoost model went wrong |
 | [`src/explore_data.py`](src/explore_data.py) | Exploratory analysis of the satellite catalog and space weather |
 | [`src/collect_snapshots.py`](src/collect_snapshots.py) | Optional daily collector of current orbits from CelesTrak |
+| [`src/build_site.py`](src/build_site.py) | Builds the website from `site/`, the CelesTrak data and the plots; GitHub Actions publishes it on every push |
 
 ## Quick start
 
@@ -89,7 +92,7 @@ python -m venv .venv
 # source .venv/bin/activate     # macOS / Linux
 
 pip install -r requirements.txt
-python -m pytest                # 40 tests, including the physics checks
+python -m pytest                # 46 tests, including the physics checks
 ```
 
 The catalog and space weather are included in `data/`, so the lookup works right away:
@@ -182,6 +185,7 @@ Satellite_Reentry_Prediction/
 ├── data/                   catalog and space weather (Space-Track data stays local)
 ├── docs/derivation.md      the drag physics, from first principles
 ├── results/                error tables and plots
+├── site/                   the website's page, styles and search code
 ├── src/                    scripts listed above
 ├── tests/                  physics checks against exact answers, fitting, conformal
 ├── EXPERIMENTS.md          numbered experiment log
