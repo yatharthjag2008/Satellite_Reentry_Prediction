@@ -1,6 +1,6 @@
 # Satellite Reentry Prediction
 
-**🔗 Live site: [yatharthjag2008.github.io/Satellite_Reentry_Prediction](https://yatharthjag2008.github.io/Satellite_Reentry_Prediction/)**. Look up any of the ~71,000 tracked objects and see the results in your browser.
+**🔗 Live site: [yatharthjag2008.github.io/Satellite_Reentry_Prediction](https://yatharthjag2008.github.io/Satellite_Reentry_Prediction/)**. Upcoming reentries forecast every 6 hours with their track record, a lookup of any of the ~71,000 tracked objects, and the results.
 
 [![tests](https://github.com/yatharthjag2008/Satellite_Reentry_Prediction/actions/workflows/tests.yml/badge.svg)](https://github.com/yatharthjag2008/Satellite_Reentry_Prediction/actions/workflows/tests.yml)
 
@@ -30,7 +30,7 @@ On objects that reentered from 2024 onward, which no model saw during training (
 - **Calibrated uncertainty.** Conformal prediction gives a 90% range around each prediction, recalibrated monthly on recent reentries; it contains the truth 89% of the time.
 - **Against the official US Space Force predictions:** given equally fresh orbits, the physics model is 28% more accurate than the official forecasts from 4+ days out, and within 1.2× of them 2–4 days out; in the final day the official forecasts, with dense radar tracking, are far better. See [below](#against-the-official-predictions).
 
-Every number comes from [`EXPERIMENTS.md`](EXPERIMENTS.md), a numbered log of 20 experiments, with every model setting chosen on a 2023 validation year rather than the test set.
+Every number comes from [`EXPERIMENTS.md`](EXPERIMENTS.md), a numbered log of 21 experiments, with every model setting chosen on a 2023 validation year rather than the test set.
 
 ### Whole lifetimes from the first month (Part 1)
 
@@ -45,6 +45,16 @@ From only an object's orbits 10–40 days after launch, the physics model with a
 Near-circular satellites come out at about 25% and rocket bodies at about 21%. Tested on launches from a later period (2012–2015), the physics held up (23% for satellites), while ML models trained on earlier launches did not (experiment 019). The model doesn't work for transfer orbits, where the Moon's and Sun's gravity move the perigee, or for Starlink, whose lifetime is set by the operator.
 
 ![Lifetime predicted vs. actual](results/lifetime_predicted_vs_actual.png)
+
+## Live forecasts
+
+Every 6 hours, [`forecasts.yml`](.github/workflows/forecasts.yml) runs [`live_forecasts.py`](src/live_forecasts.py) on GitHub Actions and publishes the results to the [website](https://yatharthjag2008.github.io/Satellite_Reentry_Prediction/#forecasts):
+
+1. **Collect.** CelesTrak's decaying objects every run, and once a day the larger low-orbit groups (below 500 km), the catalog and the space weather. The orbits come from Space-Track through CelesTrak, so they stay in the repository's Actions cache and are never published.
+2. **Forecast.** The physics model, run as in the lookup tool: B fitted over up to 30 days of one orbit a day, or over the last 8 days within 10 days of reentry. Objects tracked for less than a month get a fit over the days there are and a 90% range calibrated for that ([`forecast_ranges.py`](src/forecast_ranges.py)). No forecast is made for an object holding its altitude, or one with a fitted B over 1 m²/kg, which isn't drag (experiment 021).
+3. **Score.** Every forecast is logged, and once the catalog lists the object as reentered, compared with the decay date.
+
+The forecasts, the log and the scores are on the [`forecast-data`](https://github.com/yatharthjag2008/Satellite_Reentry_Prediction/tree/forecast-data) branch. Unlike everything above, these are made before the answer is known. They use the physics model only: the hybrid was trained on Space-Track data and stays private.
 
 ## How it works
 
@@ -76,6 +86,8 @@ The physics code is tested against exact answers: in an exponential atmosphere t
 | [`src/download_early_orbits.py`](src/download_early_orbits.py), [`src/lifetime_model.py`](src/lifetime_model.py), [`src/train_lifetime_model.py`](src/train_lifetime_model.py) | Part 1: whole lifetimes from the first 40 days in orbit |
 | [`src/analyze_errors.py`](src/analyze_errors.py) | Breaks down where the first XGBoost model went wrong |
 | [`src/explore_data.py`](src/explore_data.py) | Exploratory analysis of the satellite catalog and space weather |
+| [`src/live_forecasts.py`](src/live_forecasts.py) | The website's live forecasts: collects CelesTrak orbits, forecasts every tracked object and scores past forecasts (run by GitHub Actions) |
+| [`src/forecast_ranges.py`](src/forecast_ranges.py) | Calibrates the live forecasts' 90% ranges on the latest year of reentries |
 | [`src/collect_snapshots.py`](src/collect_snapshots.py) | Optional daily collector of current orbits from CelesTrak |
 | [`src/build_site.py`](src/build_site.py) | Builds the website from `site/`, the CelesTrak data and the plots; GitHub Actions publishes it on every push |
 
@@ -92,7 +104,7 @@ python -m venv .venv
 # source .venv/bin/activate     # macOS / Linux
 
 pip install -r requirements.txt
-python -m pytest                # 46 tests, including the physics checks
+python -m pytest                # 56 tests, including the physics checks
 ```
 
 The catalog and space weather are included in `data/`, so the lookup works right away:
@@ -133,6 +145,7 @@ python src/atmosphere.py              # NRLMSIS density table, about 4 minutes
 python src/physics_model.py           # about 7 minutes
 python src/train_reentry_model.py     # about 3 minutes
 python src/uncertainty.py             # ranges used by the lookup
+python src/forecast_ranges.py         # ranges used by the live forecasts (needs download_final_orbits.py)
 
 python src/download_early_orbits.py   # Part 1: about an hour
 python src/lifetime_model.py          # under a minute
@@ -175,6 +188,7 @@ Before the Space-Track data, `explore_data.py` looked at the catalog alone. Its 
 - [x] Comparison with the official US Space Force predictions
 - [x] Live predictions in the lookup tool
 - [x] Whole lifetime from the first 40 days after launch, with a solar-cycle forecast (Part 1)
+- [x] Live physics forecasts on the website every 6 hours, scored as the objects reenter
 - [ ] Lunisolar perturbations, so transfer orbits can be predicted too
 - [ ] Recalibrate the hybrid's ranges for the final days, using every orbit
 
