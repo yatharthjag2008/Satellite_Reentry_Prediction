@@ -23,7 +23,8 @@ def orbits(norad, a_km, days):
     epochs = pd.to_datetime(pd.Series(epochs).dt.strftime("%Y-%m-%dT%H:%M:%S"))
     return pd.DataFrame({"NORAD_CAT_ID": norad, "EPOCH": epochs,
                          "MEAN_MOTION": mean_motion(np.asarray(a_km)), "ECCENTRICITY": 0.0, "INCLINATION": 51.6,
-                         "BSTAR": 1e-4, "MEAN_MOTION_DOT": 1e-4, "APOAPSIS": h, "PERIAPSIS": h})[ORBIT_COLUMNS]
+                         "BSTAR": 1e-4, "MEAN_MOTION_DOT": 1e-4, "APOAPSIS": h, "PERIAPSIS": h,
+                         "RA_OF_ASC_NODE": 10.0, "ARG_OF_PERICENTER": 0.0, "MEAN_ANOMALY": 0.0})[ORBIT_COLUMNS]
 
 
 def decaying(norad, B, h_start, days, atm, end=25.0, every=0.25):
@@ -38,7 +39,8 @@ def decaying(norad, B, h_start, days, atm, end=25.0, every=0.25):
 def test_to_orbits_converts_celestrak_rows():
     gp = pd.DataFrame({"OBJECT_NAME": ["X"], "NORAD_CAT_ID": [1], "EPOCH": ["2026-11-27T13:34:19.706304"],
                        "MEAN_MOTION": [mean_motion(R_EARTH + 300.0)], "ECCENTRICITY": [0.001], "INCLINATION": [51.6],
-                       "BSTAR": [1e-4], "MEAN_MOTION_DOT": [1e-4]})
+                       "BSTAR": [1e-4], "MEAN_MOTION_DOT": [1e-4], "RA_OF_ASC_NODE": [10.0],
+                       "ARG_OF_PERICENTER": [20.0], "MEAN_ANOMALY": [30.0]})
     out = to_orbits(gp)
     assert list(out.columns) == ORBIT_COLUMNS
     a = R_EARTH + 300.0
@@ -143,3 +145,19 @@ def test_forecast_all_skips_objects_that_reentered_or_went_quiet():
     now = history["EPOCH"].max() + pd.Timedelta(days=1)
     assert forecast_all(history, atm, widths, now, decayed_ids=[900001])["NORAD_CAT_ID"].tolist() == [900002]
     assert forecast_all(history, atm, widths, now + pd.Timedelta(days=5)).empty
+
+
+def test_tracks_only_for_short_windows_from_now_on():
+    from live_forecasts import tracks
+
+    epoch = pd.Timestamp("2026-01-01")
+    row = {"NORAD_CAT_ID": 1, "EPOCH": epoch, "ECCENTRICITY": 0.001, "ARG_OF_PERICENTER": 0.0, "INCLINATION": 51.6,
+           "MEAN_ANOMALY": 0.0, "MEAN_MOTION": 15.9, "RA_OF_ASC_NODE": 0.0, "status": "forecast"}
+    latest = pd.DataFrame([{**row, "days": 1.0, "low_days": 0.5, "high_days": 1.5},
+                           {**row, "NORAD_CAT_ID": 2, "days": 5.0, "low_days": 3.0, "high_days": 8.0}])
+    now = epoch + pd.Timedelta(days=0.75)  # part of the first window has passed
+    out = tracks(latest, now)
+    assert list(out) == ["1"]
+    assert out["1"]["start"] == "2026-01-01T18:00Z" and out["1"]["end"] == "2026-01-02T12:00Z"
+    assert len(out["1"]["lat"]) == 18 * 30 + 1  # every 2 minutes for 18 hours
+    assert abs(out["1"]["at"][0]) <= 51.7

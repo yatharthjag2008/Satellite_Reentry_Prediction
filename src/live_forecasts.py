@@ -12,6 +12,8 @@ GitHub Actions runs this every 6 hours (.github/workflows/forecasts.yml):
    90% range calibrated for that (forecast_ranges.py).
 3. score: once the catalog lists an object as reentered, every forecast made
    for it is compared with the decay date (taken as midday, as in training).
+4. map: for objects whose 90% window is under 2 days, the ground track during
+   the window, which is where they can come down (ground_track.py).
 
 The trained hybrid isn't used: like the Space-Track data it was trained on, it
 stays private. The collected orbits stay private too, in the Actions cache,
@@ -37,8 +39,9 @@ from atmosphere import MsisAtmosphere
 from build_reentry_dataset import DATA_DIR
 from collect_snapshots import GP_QUERIES, GP_URL, HEADERS, SATCAT_URL, SPACE_WEATHER_URL, add_altitudes
 from download_history import FIELDS
-from forecast_ranges import MAX_B, OUT_FILE as WIDTHS_FILE
-from physics_model import fit_drag_parameter, forecast, unit_decay_rate
+from forecast_ranges import OUT_FILE as WIDTHS_FILE
+from ground_track import ground_track, subpoints, satellite
+from physics_model import MAX_B, fit_drag_parameter, forecast, plausible, unit_decay_rate
 from predict_reentry import SHORT_WINDOW, SHORT_WINDOW_BELOW, features
 from train_reentry_model import HORIZONS
 from uncertainty import band_of, group_of
@@ -49,7 +52,8 @@ ORBITS_FILE = LIVE_DIR / "orbits.parquet"
 STATE_FILE = LIVE_DIR / "state.json"
 OUT_DIR = ROOT / "forecast-data"
 
-ORBIT_COLUMNS = FIELDS.split(",")
+# What the models use (as from Space-Track), plus the angles SGP4 needs for the ground track.
+ORBIT_COLUMNS = FIELDS.split(",") + ["RA_OF_ASC_NODE", "ARG_OF_PERICENTER", "MEAN_ANOMALY"]
 HISTORY_DAYS = 45
 FULL_EVERY = pd.Timedelta(hours=20)  # the large groups, catalog and weather: about once a day
 MAX_PERIGEE_KM = 500   # from the large groups, keep objects low enough to come down within a few years
@@ -166,10 +170,6 @@ def ranges(days, labels, groups, widths):
     return days / factor, days * factor
 
 
-def plausible(B):
-    return np.isfinite(B) & (B > 0) & (B <= MAX_B)
-
-
 def forecast_all(orbits, atm, widths, now, decayed_ids=()):
     """One row per object still tracked: its latest orbit, status and, if it has one, the forecast."""
     every = features(orbits)
@@ -183,9 +183,7 @@ def forecast_all(orbits, atm, widths, now, decayed_ids=()):
     latest = latest[~latest["NORAD_CAT_ID"].isin(decayed_ids)].reset_index(drop=True)
 
     B, B_short = latest["B_fit"].to_numpy(), latest["B_short"].to_numpy()
-    days = np.full(len(latest), np.nan)
-    if plausible(B).any():
-        days = forecast(latest, np.where(plausible(B), B, np.nan), atm, max_days=MAX_FORECAST_DAYS)
+    days = forecast(latest, B, atm, max_days=MAX_FORECAST_DAYS)
     # Within 10 days, the 8-day fit; also for an object seen too briefly for the daily fit.
     short = plausible(B_short) & ((plausible(B) & (days < SHORT_WINDOW_BELOW)) | ~np.isfinite(B))
     days_short = np.full(len(latest), np.nan)
@@ -228,6 +226,32 @@ def forecast_records(latest):
             "high": iso(epoch + pd.Timedelta(days=r.high_days)) if np.isfinite(r.high_days) else None,
         })
     return records
+
+
+def tracks(latest, now):
+    """Ground tracks during the rest of each forecast's 90% window, where that is under 2 days.
+
+    Points are rounded to 0.1° (about 11 km), with the place beneath the object at
+    the predicted time.
+    """
+    out = {}
+    rows = latest[(latest["status"] == "forecast") & latest["low_days"].notna()]
+    for r in rows.to_dict("records"):
+        if any(pd.isna(r.get(c)) for c in ("RA_OF_ASC_NODE", "ARG_OF_PERICENTER", "MEAN_ANOMALY")):
+            continue  # collected before the angles were kept
+        start = max(r["EPOCH"] + pd.Timedelta(days=r["low_days"]), now)
+        end = r["EPOCH"] + pd.Timedelta(days=r["high_days"])
+        if end <= start:
+            continue
+        track = ground_track(r, start, end)
+        if track is None or len(track[0]) < 2:
+            continue
+        at = subpoints(satellite(r), pd.DatetimeIndex([r["EPOCH"] + pd.Timedelta(days=r["days"])]))
+        out[str(int(r["NORAD_CAT_ID"]))] = {
+            "start": iso(start), "end": iso(end),
+            "lat": np.round(track[0], 1).tolist(), "lon": np.round(track[1], 1).tolist(),
+            "at": [round(float(at[0][0]), 1), round(float(at[1][0]), 1)] if len(at[0]) else None}
+    return out
 
 
 def add_to_log(log_df, latest, now):
@@ -296,6 +320,8 @@ main branch) and read by the website. This branch is replaced on every run.
 - `forecasts.json`: the latest physics forecast for every tracked object expected
   to reenter within a year, with its 90% range
 - `scores.json`: how the forecasts did, once the objects reentered
+- `tracks.json`: where objects with a 90% window under 2 days can come down: the
+  ground track during the window (latitude and longitude, 0.1°)
 - `log.csv.gz`: every forecast made, one row per object and orbit: the orbit's
   epoch, the days predicted from it, the 90% range in days and the fit used
 - `satcat.csv`, `SW-All.csv`: the CelesTrak catalog and space weather used
@@ -347,8 +373,11 @@ def main():
         "calibrated_on": widths["calibrated_on"], "objects": forecast_records(latest)})
     result = scores(forecast_log, satcat)
     write_json(args.out / "scores.json", result)
+    paths = tracks(latest, now)
+    write_json(args.out / "tracks.json", {"made": iso(now), "objects": paths})
     log(f"logged {len(forecast_log) - len(old_log):,} new forecasts ({len(forecast_log):,} in all); "
-        f"scored {result['overall']['forecasts']:,} on {result['overall']['objects']:,} reentered objects")
+        f"scored {result['overall']['forecasts']:,} on {result['overall']['objects']:,} reentered objects; "
+        f"{len(paths)} ground tracks")
 
 
 if __name__ == "__main__":

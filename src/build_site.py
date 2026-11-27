@@ -23,7 +23,7 @@ RESULTS_DIR = ROOT / "results"
 SITE_DIR = ROOT / "site"
 OUT_DIR = ROOT / "_site"
 FORECAST_DIR = ROOT / "forecast-data"
-FORECAST_FILES = ["forecasts.json", "scores.json"]
+FORECAST_FILES = ["forecasts.json", "scores.json", "tracks.json"]
 
 CATALOG_COLUMNS = [
     "OBJECT_NAME", "OBJECT_ID", "NORAD_CAT_ID", "OBJECT_TYPE", "OPS_STATUS_CODE", "OWNER",

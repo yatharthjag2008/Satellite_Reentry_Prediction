@@ -34,6 +34,8 @@ let flux = null; // { start, values }: 81-day average solar flux for every day
 let readyMessage = "";
 let forecasts = null; // data/forecasts.json, or null if there are none yet
 let forecastById = new Map();
+let tracks = {}; // data/tracks.json: ground tracks during each short 90% window, by NORAD ID
+let land = null; // land.json: Natural Earth outline, rings of [lon, lat, lon, lat, ...]
 
 function escapeHtml(text) {
   const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
@@ -141,6 +143,43 @@ function fitText(f) {
   return f.fit === "8-day" ? "the last 8 days" : `${Math.max(1, Math.round(f.tracked)).toLocaleString("en-US")} days`;
 }
 
+/** The band of latitudes an orbit passes over: ±inclination, or ±(180° − i) if retrograde. */
+function latitudeBand(inclination) {
+  return Math.min(inclination, 180 - inclination);
+}
+
+/** SVG path data for a line of [lat, lon] points, broken where it crosses the date line. */
+function trackPath(lat, lon) {
+  let d = "";
+  for (let k = 0; k < lat.length; k++) {
+    const jump = k === 0 || Math.abs(lon[k] - lon[k - 1]) > 180;
+    d += `${jump ? "M" : "L"}${lon[k]},${-lat[k]}`;
+  }
+  return d;
+}
+
+/** A world map (equirectangular, north up) with ground tracks; each item is { id, name, track, band }. */
+function worldMap(items, label) {
+  const landPath = land ? land.rings.map((r) => {
+    let d = "";
+    for (let k = 0; k < r.length; k += 2) d += `${k ? "L" : "M"}${r[k]},${-r[k + 1]}`;
+    return d + "Z";
+  }).join("") : "";
+  const grid = [-60, -30, 0, 30, 60].map((y) => `M-180,${y}H180`).join("")
+    + [-120, -60, 0, 60, 120].map((x) => `M${x},-90V90`).join("");
+  const bands = items.filter((it) => it.band).map((it) =>
+    `<rect class="map-band" x="-180" y="${-it.band}" width="360" height="${2 * it.band}"/>`).join("");
+  const paths = items.filter((it) => it.track).map((it) => {
+    const tr = it.track;
+    const dot = tr.at ? `<circle class="map-dot" cx="${tr.at[1]}" cy="${-tr.at[0]}" r="2.2"/>` : "";
+    return `<a href="#${it.id}"><title>${escapeHtml(it.name)}: possible reentry ${escapeHtml(formatWhen(Date.parse(tr.start), true))} to ${escapeHtml(formatWhen(Date.parse(tr.end), true))}</title>`
+      + `<path class="map-track" d="${trackPath(tr.lat, tr.lon)}"/>${dot}</a>`;
+  }).join("");
+  return `<figure class="map"><svg viewBox="-180 -90 360 180" role="img" aria-label="${escapeHtml(label)}">
+    <rect class="map-sea" x="-180" y="-90" width="360" height="180"/>${bands}
+    <path class="map-land" d="${landPath}"/><path class="map-grid" d="${grid}"/>${paths}</svg></figure>`;
+}
+
 function canPredict(row) {
   return row.DECAY_DATE === null && row.ORBIT_CENTER === "EA" && row.PERIGEE !== null && row.PERIGEE < PREDICT_BELOW;
 }
@@ -204,6 +243,18 @@ function showObject(i) {
       + `${live.perigee} × ${live.apogee} km. Physics model only; drag fitted over ${escapeHtml(fitText(live))} of tracking.`
       + (live.group === 2 ? " Starlink satellites are steered down by their operator, so treat this as rough." : "")
       + ' <a href="#forecasts">All upcoming reentries</a></p>';
+    const band = Math.round(latitudeBand(live.inclination));
+    const track = tracks[String(row.NORAD_CAT_ID)];
+    if (track) {
+      note += `<p>It can come down anywhere along the line below: its path over the ground during the 90% window, `
+        + `${escapeHtml(formatWhen(Date.parse(track.start), true))} to ${escapeHtml(formatWhen(Date.parse(track.end), true))}. `
+        + "The dot is where it would be at the predicted time.</p>"
+        + worldMap([{ id: row.NORAD_CAT_ID, name: row.OBJECT_NAME, track }], `Ground track of ${row.OBJECT_NAME} during its reentry window`);
+    } else {
+      note += `<p>The window is still too wide to narrow down where: it can come down anywhere between ${band}°S and ${band}°N, `
+        + "the latitudes its orbit passes over.</p>"
+        + worldMap([{ id: row.NORAD_CAT_ID, name: row.OBJECT_NAME, band }], `Latitudes ${band}°S to ${band}°N`);
+    }
   } else if (reentered && row.PERIGEE !== null && row.PERIGEE < 250) {
     note = "<p>The perigee is under 250 km, so the catalog orbit is probably its final one before reentry.</p>";
   } else if (canPredict(row)) {
@@ -307,10 +358,16 @@ function showForecasts(showAll = false) {
   status.textContent = `Updated ${formatWhen(Date.parse(forecasts.made), true, true)}. `
     + `${all.length.toLocaleString("en-US")} objects forecast to reenter within a year, ${soon.length.toLocaleString("en-US")} `
     + `within ${SOON_DAYS} days.` + (others.length ? ` Also tracking ${others.join(", ")}.` : "");
+  const mapped = all.filter((f) => tracks[String(f.id)]);
+  const which = mapped.length === 1 ? "the object whose 90% window is" : `the ${mapped.length} objects whose 90% windows are`;
+  const map = mapped.length ? `<p class="note">Where ${which} under 2 days can come down: `
+    + "each line is the path beneath an object during its window, and each dot is where it would be at the predicted time. "
+    + "Select a line for the object.</p>"
+    + worldMap(mapped.map((f) => ({ id: f.id, name: f.name, track: tracks[String(f.id)] })), "Ground tracks of objects due to reenter soon") : "";
   if (shown.length === 0) {
-    box.innerHTML = all.length ? `<p class="note">None expected within ${SOON_DAYS} days.</p>` : "";
+    box.innerHTML = map + (all.length ? `<p class="note">None expected within ${SOON_DAYS} days.</p>` : "");
   } else {
-    box.innerHTML = `<div class="table-scroll"><table class="forecast-table">
+    box.innerHTML = map + `<div class="table-scroll"><table class="forecast-table">
       <thead><tr><th scope="col">Object</th><th scope="col">Orbit</th><th scope="col">Predicted reentry</th>
         <th scope="col">90% range</th><th scope="col">Drag fitted over</th></tr></thead>
       <tbody>${shown.map(forecastRow).join("")}</tbody></table></div>`;
@@ -369,7 +426,8 @@ async function fetchJson(path) {
 
 async function start() {
   // The forecasts are optional: the site works without them.
-  const live = Promise.allSettled([fetchJson("data/forecasts.json"), fetchJson("data/scores.json")]);
+  const live = Promise.allSettled([fetchJson("data/forecasts.json"), fetchJson("data/scores.json"),
+    fetchJson("data/tracks.json"), fetchJson("land.json")]);
   try {
     [catalog, flux] = await Promise.all([fetchJson("data/catalog.json"), fetchJson("data/solar_flux.json")]);
   } catch (error) {
@@ -377,7 +435,9 @@ async function start() {
     console.error(error);
     return;
   }
-  const [forecastResult, scoresResult] = await live;
+  const [forecastResult, scoresResult, tracksResult, landResult] = await live;
+  if (tracksResult.status === "fulfilled") tracks = tracksResult.value.objects || {};
+  if (landResult.status === "fulfilled") land = landResult.value;
   if (forecastResult.status === "fulfilled") {
     forecasts = forecastResult.value;
     forecastById = new Map(forecasts.objects.map((f) => [f.id, f]));

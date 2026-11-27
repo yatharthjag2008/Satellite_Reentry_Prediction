@@ -10,6 +10,8 @@
   --hero-bg: #0d1222;
   --hero-text: #eef0f6;
   --hero-muted: #a9b0c3;
+  --map-sea: #eef3f7;
+  --map-land: #d5d9d2;
   --radius: 10px;
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
   color-scheme: light;
@@ -26,6 +28,8 @@
     --accent-soft: #2a1c15;
     --good: #6ee7a0;
     --hero-bg: #080b14;
+    --map-sea: #121926;
+    --map-land: #2c3444;
     color-scheme: dark;
   }
 }
@@ -40,6 +44,8 @@
   --accent-soft: #2a1c15;
   --good: #6ee7a0;
   --hero-bg: #080b14;
+  --map-sea: #121926;
+  --map-land: #2c3444;
   color-scheme: dark;
 }
 
@@ -166,6 +172,17 @@ tr.muted { color: var(--muted); }
 td.best { font-weight: 700; color: var(--accent); }
 
 /* Live forecasts */
+.map { margin: 14px 0 18px; }
+.map svg { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); }
+.map-sea { fill: var(--map-sea); }
+.map-land { fill: var(--map-land); }
+.map-grid { fill: none; stroke: var(--line); stroke-width: 0.3; }
+.map-band { fill: var(--accent); opacity: 0.16; }
+.map-track { fill: none; stroke: var(--accent); stroke-width: 1.6px; vector-effect: non-scaling-stroke; opacity: 0.85; }
+.map a:hover .map-track, .map a:focus .map-track { stroke-width: 3px; opacity: 1; }
+.map-dot { fill: var(--text); stroke: var(--surface); stroke-width: 0.6; }
+.callout .map { margin-bottom: 4px; }
+.callout p + p { margin-top: 8px; }
 .forecast-table th:first-child { min-width: 200px; }
 .forecast-table td.strong { font-weight: 650; color: var(--accent); }
 .forecast-table td, .recent-table td { vertical-align: top; }
