@@ -165,6 +165,22 @@ tr.highlight th { font-weight: 700; }
 tr.muted { color: var(--muted); }
 td.best { font-weight: 700; color: var(--accent); }
 
+/* Live forecasts */
+.forecast-table th:first-child { min-width: 200px; }
+.forecast-table td.strong { font-weight: 650; color: var(--accent); }
+.forecast-table td, .recent-table td { vertical-align: top; }
+.recent-table .sub { display: inline; margin-left: 4px; }
+.tag { color: var(--accent); }
+.table-title {
+  margin: 24px 0 0; font-size: 12px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted);
+}
+button.more {
+  font: inherit; font-size: 15px; color: var(--accent); background: none; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
+}
+button.more:hover, button.more:focus-visible { border-color: var(--accent); outline: none; }
+
 .findings { padding-left: 20px; max-width: 760px; }
 .findings li { margin: 8px 0; }
 
