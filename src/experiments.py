@@ -265,9 +265,39 @@ def hybrid_corrections():
     plt.close(fig)
 
 
+def drag_cap():
+    """Are physically extreme drag fits a sign that something other than drag moves the orbit?
+
+    Rules are chosen on the validation year; the physics has no training, so the
+    test set is scored too. Rows a rule flags get no forecast, so the share kept is shown.
+    """
+    from uncertainty import band_of, conformal_quantile
+
+    _, val = validation_split()
+    _, test = load(verbose=False)
+    for name, df in [("validation 2023", val), ("test 2024+", test)]:
+        df = df[np.isfinite(df["physics_days"]) & (df["B_fit"] > 0)]
+        rules = {"no rule": df["B_fit"] > np.inf, "B > 0.5 m^2/kg": df["B_fit"] > 0.5,
+                 "B > 1 m^2/kg": df["B_fit"] > 1, "apogee rising over 30 days": df["apogee_rate_30d"] > 0}
+        rows = {}
+        for rule, flagged in rules.items():
+            kept = df[~flagged]
+            row = scores({rule: kept["physics_days"].to_numpy()}, kept["days_left"].to_numpy()).iloc[0].to_dict()
+            row["rows kept"] = len(kept) / len(df)
+            score = np.abs(np.log10(kept["days_left"] / kept["physics_days"]))
+            bands = band_of(kept["physics_days"].to_numpy())
+            for band, label in [(1, "90% range, predicted 3-10 days"), (2, "predicted 10-30 days")]:
+                row[label] = 10 ** conformal_quantile(score[bands == band])
+            rows[rule] = row
+        print(f"\n{name}: physics median error, and the factor a 90% range spans each way")
+        table = pd.DataFrame(rows).T
+        print(table.to_string(formatters={c: ("{:.2f}x".format if "predicted" in c else "{:.0%}".format)
+                                          for c in table.columns}))
+
+
 EXPERIMENTS = {"hybrid_corrections": hybrid_corrections, "hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning, "xgboost_tuning": xgboost_tuning,
                "solar_forecast": solar_forecast, "drag_stability": drag_stability,
-               "final_days_window": final_days_window}
+               "final_days_window": final_days_window, "drag_cap": drag_cap}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in EXPERIMENTS:

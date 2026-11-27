@@ -24,6 +24,7 @@ Numbered experiments on predicting reentry. Each entry records what changed, wha
 | [018](#018-part-1-physics-vs-ml-vs-hybrid) | Does ML help for lifetimes? | Seems to (26%) under cross-validation by launch... |
 | [019](#019-part-1-with-a-fair-time-split) | ...and on a later period? | No: physics 35%, ML 55–69% |
 | [020](#020-does-the-solar-cycle-forecast-help-within-a-year) | Does the solar-cycle forecast help Part 2? | No: it only matters over years |
+| [021](#021-drag-fits-too-large-to-be-drag) | Can the physics tell when it's wrong? | Yes: a fitted B over 1 m²/kg isn't drag; 90% ranges 3.5× narrower |
 
 ## 001: Baseline models
 
@@ -311,3 +312,18 @@ By group (solar-cycle forecast): near-circular rocket bodies 21%, near-circular 
 | Perfect forecast (trailing 81-day flux) | 19% | 13% | 19% | 24% | 22% |
 
 **Conclusion:** no gain. The forecast blends from today's flux into the cycle shape over about a year, so within a year it hardly differs from holding today's flux fixed, and the cycle shape can't predict the month-to-month swings that make up most of the remaining 2-point gap to a perfect forecast. It matters for multi-year lifetimes (017: 84% → 29%), not for days-until-reentry, so Part 2 keeps the simpler fixed weather and leaves the solar peak to the hybrid (016).
+
+## 021: Drag fits too large to be drag
+
+**Setup:** calibrating 90% ranges for physics-only forecasts (for the website, which can't use the trained hybrid) gave ranges far wider than the median errors suggest: for debris predicted to reenter in 3–10 days, ÷9 to ×9. The worst cases are debris at 550–700 km (Fengyun 1C, CZ-6A and Scout debris) with a fitted B of 15–470 m²/kg, a hundred times more than any solid object, predicted to fall within days but staying up for months. In the example checked, the perigee falls while the apogee *rises*, which drag can't do: gravity (Earth's odd zonal harmonics, the Sun and the Moon) is slowly shifting the eccentricity, and with almost no air at that height the fit blames the tiny change in a on drag. `experiments.py drag_cap` tries rules that flag such fits, chosen on the 2023 validation year. A flagged row gets no forecast; rows are those with a positive B.
+
+| Validation 2023 | < 1 week | 1–4 weeks | 1–3 months | 3–12 months | Overall | Rows kept | 90% range, predicted 3–10 days | 10–30 days |
+|---|---|---|---|---|---|---|---|---|
+| No rule | 17% | 12% | 14% | 27% | 22% | 100% | ×5.77 | ×1.96 |
+| B > 0.5 m²/kg | 17% | 11% | 13% | 26% | 21% | 95% | ×1.56 | ×1.45 |
+| **B > 1 m²/kg** | 17% | 11% | 14% | 27% | 22% | 98% | ×1.64 | ×1.50 |
+| Apogee rising over 30 days | 17% | 12% | 14% | 27% | 22% | 100% | ×5.77 | ×1.96 |
+
+On the test set (2024+), B > 1 m²/kg keeps 98% of rows, the overall median error stays at 20% (by horizon each is a point lower or the same), and the 90% range for predictions of 3–10 days narrows from ×19 to ×14 across all groups. That is still wide because of Starlink, whose operator chooses when to deorbit; for debris and rocket bodies in the latest year of reentries it is ×1.6 (`forecast_ranges.py`).
+
+**Conclusion:** B = C_D·A/m above 1 m²/kg means more than about 0.45 m² per kilogram, foil rather than hardware, so a fit that large is the model admitting that drag doesn't explain the orbit. B > 1 is kept over B > 0.5, which narrows the ranges about as much but drops twice as many rows, many of them fine. The rising-apogee rule catches almost nothing, since in daily mean elements the apogee rarely rises for a whole month. The live forecasts on the website say "not decaying by drag alone" instead of forecasting when B > 1. The published tables above don't use the rule; the hybrid already learned to correct these rows (016).
