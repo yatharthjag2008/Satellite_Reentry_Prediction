@@ -28,6 +28,7 @@ Numbered experiments on predicting reentry. Each entry records what changed, wha
 | [022](#022-the-drag-cap-in-the-hybrid) | Does the hybrid gain from the same rule? | A little (hybrid under 1 week 21% → 19%); now used everywhere |
 | [023](#023-90-ranges-for-the-final-days) | Can the final-days physics get honest ranges? | Yes: 87–95% coverage on later reentries |
 | [024](#024-would-a-storm-forecast-help-in-the-final-week) | Would a storm forecast help in the final week? | Barely: even a perfect one saves about an hour, only during storms |
+| [025](#025-part-1-the-moon-and-the-sun-on-transfer-orbits) | Do the Moon's and Sun's gravity fix transfer orbits? | Yes: 503% → 28% median error on 261 transfer orbits |
 
 ## 001: Baseline models
 
@@ -375,3 +376,17 @@ The 1.4% of rows the rule flags were hard for the hybrid either way (29% error w
 | No storm, perfect forecast | 1.5 | 5.3 | 10.4 | 17.3 |
 
 **Conclusion:** even perfect knowledge of the coming storms helps little: nothing on average, and about an hour (13–16%) at 1–4 days when a storm does come. A real forecast would get only part of that, so none is added. The 8-day fit already absorbs much of the effect: it measures the drag of the last few days, storms included. As in 013, what limits the final days is not the weather but how well the drag itself (B) is known.
+
+## 025: Part 1, the Moon and the Sun on transfer orbits
+
+**Setup:** Part 1's physics failed on transfer orbits (apogee above 5,000 km, mostly rocket bodies that sent satellites toward geostationary orbit): near apogee the Moon and the Sun pull on the orbit and slowly raise or lower the perigee, which drag alone can't follow (017). `lunisolar.py` adds their orbit-averaged tides at their actual positions, and Earth's J₂ flattening, to the drag simulation (`docs/derivation.md`, section 9). `download_transfer_orbits.py` fetched each object's orientation (node and argument of perigee) at its day-40 starting orbit. `experiments.py transfer_orbits` then simulates the same 261 transfer orbits with a fitted B, from the same starting orbits, with the same B and the same solar-cycle forecast as Part 1, three ways. Nothing is fitted, so all of them are scored.
+
+| Forces | Under 1 year | 1–3 years | 3–10 years | 10+ years | Overall | Within 25% | Answer within 30 years |
+|---|---|---|---|---|---|---|---|
+| Drag only (Part 1 until now) | 1904% | 495% | 229% | 75% | 503% | 10% | 66% |
+| Drag + J₂ | 1903% | 495% | 229% | 75% | 503% | 10% | 66% |
+| **Drag + J₂ + Sun + Moon** | **26%** | **33%** | **34%** | **28%** | **28%** | **46%** | **97%** |
+
+The middle half of predicted / actual lifetimes goes from 2.0–21.7 to 0.68–1.14. Halving the step from one day to half a day changes the lifetimes by a median of 0.09% (60 objects), so the result isn't a numerical artifact.
+
+**Conclusion:** for transfer orbits the Sun and Moon aren't a correction, they decide the lifetime: with drag alone the model mostly predicts a perigee that never comes down, while the real perigee is pulled down into the air (or lifted out of it) over months. J₂ alone changes nothing, as expected, since it turns the orbit without changing the perigee height, but it matters together with the Sun and Moon by setting which way the orbit faces them. With all three, transfer orbits are predicted about as well as near-circular ones (28% against Part 1's 29%), years ahead, from 40 days of tracking. Part 1's main tables still use drag alone, which is all near-circular orbits need.

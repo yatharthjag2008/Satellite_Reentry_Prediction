@@ -148,14 +148,38 @@ Part 1 predicts the whole lifetime from an object's first weeks in orbit. The ph
 
 **B is less certain.** The fit window (days 10–40 after launch) is chosen so that deployment and early maneuvers are mostly over, but at 500 km a month of decay is small, so B is noisier than near reentry. Because the lifetime is proportional to 1/B for a fixed atmosphere, a 20% error in B gives roughly a 20% error in lifetime: B's uncertainty passes straight through.
 
-## 9. What the model leaves out: the Moon and the Sun
+## 9. The Moon, the Sun and Earth's flattening
 
-Everything above treats drag as the only force that changes the orbit's size and shape. For near-circular orbits that's an excellent approximation. For **transfer orbits** (perigee ~200 km, apogee up to 36,000 km, typical of rocket bodies that put satellites on their way to geostationary orbit), it isn't. Near apogee the object is far enough out that the Moon's and Sun's gravity pull on it noticeably, and over months that slowly raises or lowers the perigee by tens of kilometers. Because drag depends exponentially on perigee height, such a change can shorten or lengthen the lifetime several times over. Modeling it means following the orbit's orientation relative to the Moon and Sun (lunisolar perturbations), which this project doesn't do; Part 1 therefore reports transfer orbits separately, and the hybrid can learn part of the effect from the apogee and inclination.
+Everything above treats drag as the only force that changes the orbit's size and shape. For near-circular orbits that's an excellent approximation. For **transfer orbits** (perigee ~200 km, apogee up to 36,000 km, typical of rocket bodies that put satellites on their way to geostationary orbit), it isn't. Near apogee the object is far enough out that the Moon's and Sun's gravity pull on it noticeably, and over months that slowly raises or lowers the perigee by tens of kilometers. Because drag depends exponentially on perigee height, such a change can shorten or lengthen the lifetime several times over. [`src/lunisolar.py`](../src/lunisolar.py) adds these forces; this section derives what it integrates.
+
+**Two vectors instead of angles.** Describe the orbit's shape and orientation by the eccentricity vector **e** (length e, pointing to perigee) and the dimensionless angular momentum **j** = √(1−e²) **ŵ**, where **ŵ** is the orbit's normal. They are always perpendicular, and e² + j² = 1. The perigee height is a(1 − |**e**|) − R, so anything that turns or stretches **e** changes it.
+
+**The tide of a distant body.** A body of gravitational parameter μ₃ at distance R₃ in direction **û** stretches the space around Earth. To lowest (quadrupole) order, the potential energy per unit mass at position **r** is Φ = −(μ₃/2R₃³)(3(**r**·**û**)² − r²). Over one orbit (section 5, using E), ⟨x²⟩ = a²(1+4e²)/2 along **e**, ⟨y²⟩ = a²(1−e²)/2 across it, and ⟨r²⟩ = a²(1 + 3e²/2), which gives
+
+$$\bar\Phi_3 = -\frac{\mu_3 a^2}{4R_3^3}\left[1 - 6e^2 + 15(\mathbf e\cdot\hat{\mathbf u})^2 - 3(\mathbf j\cdot\hat{\mathbf u})^2\right]$$
+
+**Earth's flattening.** Earth's equatorial bulge (J₂ = 1.083 × 10⁻³) adds Φ = μJ₂R²P₂(z/r)/r³, which averages over an orbit to
+
+$$\bar\Phi_{J_2} = \frac{\mu J_2 R^2}{4a^3}\left[\frac{1}{j^3} - \frac{3(\mathbf j\cdot\hat{\mathbf z})^2}{j^5}\right]$$
+
+It doesn't change the perigee height by itself, but it turns the orbit: the perigee and the orbit's plane precess by several degrees a day in low orbit, which changes how the orbit faces the Sun and Moon, and so whether their pull raises or lowers the perigee.
+
+**How the vectors move.** For any orbit-averaged potential, Milankovitch's equations (in the vector form of Tremaine, Touma & Namouni, 2009) give
+
+$$\frac{d\mathbf j}{dt} = -\frac{1}{\sqrt{\mu a}}\left(\mathbf j\times\nabla_{\mathbf j}\bar\Phi + \mathbf e\times\nabla_{\mathbf e}\bar\Phi\right), \qquad \frac{d\mathbf e}{dt} = -\frac{1}{\sqrt{\mu a}}\left(\mathbf j\times\nabla_{\mathbf e}\bar\Phi + \mathbf e\times\nabla_{\mathbf j}\bar\Phi\right)$$
+
+Both are cross products, so they keep **e**·**j** = 0 and e² + j² = 1, and a doesn't change: averaged over an orbit, these forces only reshape and turn it. The Sun's and Moon's positions come from the Astronomical Almanac's low-precision formulas.
+
+**Together with drag.** Drag shrinks a, and shortens **e** along itself, by the rates of section 4; **j** lengthens to keep e² + j² = 1. The code integrates all of it with fourth-order Runge–Kutta in steps of at most a day, short enough to follow the Moon around its orbit. The tests check it against exact answers: the J₂ precession rates of the node and perigee match the textbook formulas (Ω̇ = −(3/2)nJ₂(R/p)² cos i and ω̇ = (3/4)nJ₂(R/p)²(5cos²i − 1)) to 0.1%, a distant ring grows the eccentricity of an orbit inclined by 60° and shrinks it at the mirror-image perigee (the Kozai effect), and with the new forces switched off the lifetimes match the drag-only code.
+
+**What it changes.** On 261 transfer orbits in Part 1, predicted from their first 40 days, adding the Sun and Moon brings the median lifetime error from 503% to 28% (experiment 025). With drag alone the model mostly predicts a perigee that never comes down; in reality the Moon and Sun pull it into the air within months or years.
 
 ## References
 
 - D. A. Vallado, *Fundamentals of Astrodynamics and Applications*, 4th ed., Microcosm Press, 2013: the drag acceleration, Gauss's variational equations and orbital decay (chapters 8–9).
 - D. G. King-Hele, *Satellite Orbits in an Atmosphere: Theory and Applications*, Blackie, 1987: orbit-averaged decay, why the apogee falls first, and lifetime estimates in an exponential atmosphere.
 - J. T. Emmert et al., "NRLMSIS 2.0: A whole-atmosphere empirical model of temperature and neutral species densities", *Earth and Space Science*, 8, 2021, with the 2.1 update; used through [pymsis](https://github.com/SWxTREC/pymsis).
+- S. Tremaine, J. Touma and F. Namouni, "Satellite dynamics on the Laplace surface", *Astronomical Journal*, 137, 3706, 2009: the orbit-averaged tide of a distant body and Milankovitch's equations in vector form (section 9).
+- The Astronomical Almanac's low-precision formulas for the Sun's and Moon's positions (section 9).
 - F. R. Hoots and R. L. Roehrich, *Spacetrack Report No. 3: Models for Propagation of NORAD Element Sets*, 1980: what the mean motion, B* and mean motion derivative in each orbit record mean.
 - V. Vovk, A. Gammerman and G. Shafer, *Algorithmic Learning in a Random World*, Springer, 2005, and Y. Romano, E. Patterson and E. Candès, "Conformalized Quantile Regression", *NeurIPS*, 2019: the conformal prediction ranges in `uncertainty.py`.
