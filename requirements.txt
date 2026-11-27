@@ -8,3 +8,4 @@ matplotlib==3.11.2
 pyarrow==26.0.1
 pymsis==0.13.0
 pytest==9.2.0
+sgp4==2.27
