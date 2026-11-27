@@ -48,3 +48,9 @@ def test_orbit_raise_gives_negative_drag_parameter():
     df = prepare(synthetic_history(1, 0.01, raise_on_day=40))
     B, _ = fit_drag_parameter(df, unit_decay_rate(df, ATM), window=15)
     assert B[-1] < 0
+
+
+def test_plausible_rejects_negative_and_implausibly_large_drag():
+    from physics_model import MAX_B, plausible
+
+    assert plausible([0.01, MAX_B, -0.01, 2 * MAX_B, np.nan]).tolist() == [True, True, False, False, False]

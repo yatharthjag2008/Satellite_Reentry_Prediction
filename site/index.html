@@ -17,7 +17,7 @@
     <p class="lede">Given an object's recent orbits and the space weather, how many days until it falls back into Earth's atmosphere?</p>
     <dl class="stats">
       <div><dt>median error</dt><dd>16%</dd></div>
-      <div><dt>predictions within 25%</dt><dd>67%</dd></div>
+      <div><dt>predictions within 25%</dt><dd>68%</dd></div>
       <div><dt>90% ranges that contain the truth</dt><dd>89%</dd></div>
       <div><dt>reentered objects tested</dt><dd>4,897</dd></div>
     </dl>
@@ -71,7 +71,7 @@
           <tr><th scope="row">Physics only <span class="sub">drag simulation, no training</span></th><td>22%</td><td>17%</td><td>21%</td><td>25%</td><td>24%</td><td>52%</td></tr>
           <tr><th scope="row">XGBoost <span class="sub">tuned</span></th><td>27%</td><td class="best">15%</td><td>19%</td><td>19%</td><td>19%</td><td>63%</td></tr>
           <tr><th scope="row">Gaussian process</th><td>24%</td><td>18%</td><td>25%</td><td>23%</td><td>23%</td><td>54%</td></tr>
-          <tr class="highlight"><th scope="row">Physics + ML hybrid</th><td class="best">21%</td><td>16%</td><td class="best">18%</td><td class="best">16%</td><td class="best">16%</td><td class="best">67%</td></tr>
+          <tr class="highlight"><th scope="row">Physics + ML hybrid</th><td class="best">19%</td><td class="best">15%</td><td class="best">18%</td><td class="best">16%</td><td class="best">16%</td><td class="best">68%</td></tr>
         </tbody>
       </table>
     </div>

@@ -60,3 +60,14 @@ def test_describe_warns_that_satellites_can_reboost():
 def test_describe_mentions_the_solar_cycle_for_long_predictions():
     text = "\n".join(describe(result(physics_days=2600.0, hybrid_days=None, range=None, solar_cycle=True)))
     assert "11-year cycle" in text and "7.1 years" in text
+
+
+def test_describe_explains_a_fit_too_large_to_be_drag():
+    text = "\n".join(describe(result(B=5.0, physics_days=np.nan, hybrid_days=120.0, range=(80.0, 180.0))))
+    assert "faster than drag can" in text and "30 years" not in text
+    assert "Hybrid model:  about 4 months" in text and "90% range" in text
+
+
+def test_describe_says_which_latitudes_it_can_fall_on():
+    assert "between 52°S and 52°N" in "\n".join(describe(result(inclination=51.6)))
+    assert "Where:" not in "\n".join(describe(result(B=-0.001, physics_days=np.nan, inclination=51.6)))

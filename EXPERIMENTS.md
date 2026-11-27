@@ -25,6 +25,9 @@ Numbered experiments on predicting reentry. Each entry records what changed, wha
 | [019](#019-part-1-with-a-fair-time-split) | ...and on a later period? | No: physics 35%, ML 55–69% |
 | [020](#020-does-the-solar-cycle-forecast-help-within-a-year) | Does the solar-cycle forecast help Part 2? | No: it only matters over years |
 | [021](#021-drag-fits-too-large-to-be-drag) | Can the physics tell when it's wrong? | Yes: a fitted B over 1 m²/kg isn't drag; 90% ranges 3.5× narrower |
+| [022](#022-the-drag-cap-in-the-hybrid) | Does the hybrid gain from the same rule? | A little (hybrid under 1 week 21% → 19%); now used everywhere |
+| [023](#023-90-ranges-for-the-final-days) | Can the final-days physics get honest ranges? | Yes: 87–95% coverage on later reentries |
+| [024](#024-would-a-storm-forecast-help-in-the-final-week) | Would a storm forecast help in the final week? | Barely: even a perfect one saves about an hour, only during storms |
 
 ## 001: Baseline models
 
@@ -326,4 +329,49 @@ By group (solar-cycle forecast): near-circular rocket bodies 21%, near-circular 
 
 On the test set (2024+), B > 1 m²/kg keeps 98% of rows, the overall median error stays at 20% (by horizon each is a point lower or the same), and the 90% range for predictions of 3–10 days narrows from ×19 to ×14 across all groups. That is still wide because of Starlink, whose operator chooses when to deorbit; for debris and rocket bodies in the latest year of reentries it is ×1.6 (`forecast_ranges.py`).
 
-**Conclusion:** B = C_D·A/m above 1 m²/kg means more than about 0.45 m² per kilogram, foil rather than hardware, so a fit that large is the model admitting that drag doesn't explain the orbit. B > 1 is kept over B > 0.5, which narrows the ranges about as much but drops twice as many rows, many of them fine. The rising-apogee rule catches almost nothing, since in daily mean elements the apogee rarely rises for a whole month. The live forecasts on the website say "not decaying by drag alone" instead of forecasting when B > 1. The published tables above don't use the rule; the hybrid already learned to correct these rows (016).
+**Conclusion:** B = C_D·A/m above 1 m²/kg means more than about 0.45 m² per kilogram, foil rather than hardware, so a fit that large is the model admitting that drag doesn't explain the orbit. B > 1 is kept over B > 0.5, which narrows the ranges about as much but drops twice as many rows, many of them fine. The rising-apogee rule catches almost nothing, since in daily mean elements the apogee rarely rises for a whole month. The live forecasts on the website say "not decaying by drag alone" instead of forecasting when B > 1. Experiment 022 tests the rule in the hybrid too.
+
+## 022: The drag cap in the hybrid
+
+**Setup:** `experiments.py hybrid_drag_cap` on the 2023 validation year. The hybrid is retrained with the physics giving no answer when B > 1 m²/kg (as for a negative B, its input is then 365 days and the ML takes over), and compared with the hybrid as it was.
+
+| Validation 2023 | < 1 week | 1–4 weeks | 1–3 months | 3–12 months | Overall | Within 25% |
+|---|---|---|---|---|---|---|
+| Hybrid | 17.5% | 12.3% | 15.9% | 17.3% | 16.8% | 68.7% |
+| **Hybrid, capped** | 17.8% | 12.0% | 15.3% | 17.0% | **16.5%** | **69.8%** |
+
+The 1.4% of rows the rule flags were hard for the hybrid either way (29% error with or without it).
+
+**Result:** a small but broad gain on the validation year, so the cap became part of the physics model (`physics_model.forecast` gives no answer for B > 1) and everything downstream was rerun. On the test set (2024+), the hybrid is **19%** under 1 week (was 21%), 15% at 1–4 weeks (was 16%), 16% overall (unchanged) and within 25% for **68%** of rows (was 67%); the physics-only row is unchanged at 24%, because those few flagged rows are scored at the 365-day fallback either way. The rolling 90% ranges still contain the truth 89% of the time. The year-by-year backtest (012) is unchanged in its medians (hybrid 22%, XGBoost 24%, physics 27%) and still has the hybrid best or tied in 20 of 22 years. The largest change is in the final days: against the official predictions with one orbit a day (011), the hybrid's median error falls from 6.0, 9.7, 15.5 and 41.7 hours to 4.8, 6.7, 11.1 and 34.2 hours (under 1 day, 1–2, 2–4 and 4+ days), since near reentry a Starlink lowering itself with thrusters looks like enormous drag. The 8-day physics of 015 is unchanged.
+
+**Conclusion:** the hybrid had mostly learned to distrust these fits already (016), but telling it outright is slightly better, and it makes the physics consistent across the lookup tool, the live forecasts and the experiments. The README's tables now come from this version. The lookup tool says when the physics has no answer for this reason and shows the hybrid's prediction.
+
+## 023: 90% ranges for the final days
+
+**Setup:** within 10 days of reentry the lookup tool uses the physics model with B fitted over the last 8 days of every orbit (015), but it gave no range for that prediction: the hybrid's conformal ranges (009–010) were calibrated on one orbit a week and almost never saw the final days. `experiments.py final_days_ranges` calibrates Mondrian conformal ranges (by object group and band of predicted days) for the 8-day-B prediction on every orbit in the final 40 days (`download_final_orbits.py`), against the reentry time of the final official TIP message, which is good to the hour, instead of the catalog date. It calibrates on objects that reentered before 2025-07-01 and checks on the 886 that reentered after. No model is trained, so the only thing fitted is the widths.
+
+| Predicted | Group | Rows | 90% range contains truth | Median width |
+|---|---|---|---|---|
+| Under 3 days | Debris and rocket bodies | 1,168 | 90% | 33 h |
+| | Other payloads | 798 | 89% | 26 h |
+| | Starlink | 7,685 | 87% | 65 h |
+| 3–10 days | Debris and rocket bodies | 1,619 | 95% | 95 h |
+| | Other payloads | 1,261 | 87% | 98 h |
+| | Starlink | 26,448 | 89% | 661 h |
+
+**Conclusion:** the ranges hold on the later period, 87–95% against 90% asked for. They are tight for uncontrolled objects (about ±16 hours around a prediction under 3 days for debris and rocket bodies) and wide for Starlink, whose operator lowers them on its own schedule. `forecast_ranges.py` now also saves these widths, calibrated on the latest year of reentries, and the lookup tool shows the range with its final-days prediction.
+
+## 024: Would a storm forecast help in the final week?
+
+**Setup:** geomagnetic storms heat the upper atmosphere within hours, and in the final days the orbit is low enough to feel it, so a forecast of storms (such as NOAA's 3-day forecast of Ap) might sharpen the final-days prediction. Before testing a real forecast, `experiments.py storm_bound` measures the most any forecast could gain: the 8-day-B physics from every orbit in the final week (015) is rerun with the 3-hourly ap index that actually happened until reentry, instead of the 7-day average held fixed. Errors are against the final official reentry time, on 33,834 orbits of 1,971 objects; 24% of them had ap reach 50 (a minor storm) before reentry. No training is involved, so test objects are used.
+
+| Median error (hours) | Under 1 day | 1–2 days | 2–4 days | 4+ days |
+|---|---|---|---|---|
+| All, 7-day ap held fixed (now) | 1.6 | 5.3 | 10.6 | 18.5 |
+| All, actual ap (perfect forecast) | 1.6 | 5.3 | 10.5 | 18.2 |
+| Storm before reentry, held fixed | 1.9 | 6.8 | 12.4 | 20.3 |
+| Storm before reentry, perfect forecast | 1.8 | 5.7 | 10.8 | 19.7 |
+| No storm, held fixed | 1.6 | 5.1 | 10.1 | 17.5 |
+| No storm, perfect forecast | 1.5 | 5.3 | 10.4 | 17.3 |
+
+**Conclusion:** even perfect knowledge of the coming storms helps little: nothing on average, and about an hour (13–16%) at 1–4 days when a storm does come. A real forecast would get only part of that, so none is added. The 8-day fit already absorbs much of the effect: it measures the drag of the last few days, storms included. As in 013, what limits the final days is not the weather but how well the drag itself (B) is known.

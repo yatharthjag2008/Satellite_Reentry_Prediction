@@ -295,9 +295,153 @@ def drag_cap():
                                           for c in table.columns}))
 
 
+def cap_physics(df, max_b=1.0):
+    """The rows' physics answer removed where the fitted B is too large to be drag (experiment 021)."""
+    df = df.copy()
+    flagged = df["B_fit"] > max_b
+    df.loc[flagged, "physics_days"] = np.nan
+    df.loc[flagged, "log_physics_days"] = np.nan
+    df.loc[flagged, "physics_filled"] = NO_PHYSICS_DAYS
+    return df
+
+
+def hybrid_drag_cap():
+    """Does the hybrid do better if the physics gives no answer when B > 1 m^2/kg?"""
+    fit, val = validation_split()
+    truth = val["days_left"].to_numpy()
+    preds = {"physics": val["physics_filled"].to_numpy(),
+             "physics, capped": cap_physics(val)["physics_filled"].to_numpy(),
+             "hybrid": predict_hybrid(train_hybrid(fit), val),
+             "hybrid, capped": predict_hybrid(train_hybrid(cap_physics(fit)), cap_physics(val))}
+    show(scores(preds, truth))
+    flagged = (val["B_fit"] > 1.0).to_numpy()
+    print(f"\n{flagged.mean():.1%} of rows flagged; median error on them:")
+    show(scores({name: pred[flagged] for name, pred in preds.items()}, truth[flagged]))
+
+
+def final_days_ranges(split="2025-07-01"):
+    """Do 90% ranges for the 8-day-B physics, calibrated on every orbit, hold on later reentries?
+
+    Calibrated on objects that reentered before `split`, checked on those after it,
+    against the reentry time of the final official (TIP) message.
+    """
+    from forecast_ranges import fresh_predictions, widths_table
+    from uncertainty import band_of
+
+    rows = fresh_predictions(MsisAtmosphere())
+    before, after = rows[rows["reentry"] < split], rows[rows["reentry"] >= split]
+    print(f"calibrate: {before['NORAD_CAT_ID'].nunique():,} objects; check: {after['NORAD_CAT_ID'].nunique():,} "
+          f"objects (reentered from {split})")
+    table, _ = widths_table(before["pred"].to_numpy(), before["truth"].to_numpy(), before["group"].to_numpy())
+    bands = band_of(after["pred"].to_numpy())
+    width = np.array([table[g][b] for g, b in zip(after["group"], bands)], dtype=float)
+    low, high = after["pred"] / 10 ** width, after["pred"] * 10 ** width
+    inside = (after["truth"] >= low) & (after["truth"] <= high)
+    hours = (high - low) * 24
+    out = {}
+    for label, m in [("predicted under 3 days", bands == 0), ("predicted 3-10 days", bands == 1)]:
+        for name, g in [("debris and rocket bodies", 0), ("other payloads", 1), ("Starlink", 2), ("all", None)]:
+            cell = m & ((after["group"] == g).to_numpy() if g is not None else True)
+            out[(label, name)] = {"rows": int(cell.sum()), "contains truth": inside[cell].mean(),
+                                  "median width (hours)": hours[cell].median()}
+    print(pd.DataFrame(out).T.to_string(formatters={"contains truth": "{:.0%}".format,
+                                                     "median width (hours)": "{:.0f}".format}))
+
+
+def storm_bound(storm_ap=50):
+    """In the final week, how much could a forecast of geomagnetic storms help the physics?
+
+    An upper bound: the 8-day-B physics from every orbit (EXPERIMENTS.md 015) is
+    rerun with the 3-hourly ap that actually happened until reentry, against the
+    usual 7-day average held fixed. No training is involved, so test objects are used.
+    """
+    from compare_official import LEAD_BANDS
+    from forecast_ranges import fresh_predictions
+
+    atm = MsisAtmosphere()
+    rows = fresh_predictions(atm)
+    rows = rows[rows["truth"] <= 7].reset_index(drop=True)
+    sw = pd.read_csv(DATA_DIR / "SW-All.csv", parse_dates=["DATE"]).set_index("DATE").asfreq("D").ffill()
+    ap3 = sw[[f"AP{i}" for i in range(1, 9)]].to_numpy().ravel()  # every 3 hours from the first day
+    start = ((rows["EPOCH"] - sw.index[0]).dt.total_seconds() / 10800).to_numpy()
+    a, e, B = rows["a_km"].to_numpy(), rows["eccentricity"].to_numpy(), rows["B_short"].to_numpy()
+    f107a, ap_7d = rows["f107_81d"].to_numpy(), rows["ap_7d"].to_numpy()
+
+    def actual(h, idx, t):
+        slot = np.clip((start[idx, None] + t * 8).astype(int), 0, len(ap3) - 1)
+        return atm.density(h, f107a[idx, None], ap3[slot])
+
+    held = rows["pred"].to_numpy()
+    perfect = propagate(a, e, B, actual, max_days=40, max_step=0.125)
+    end = np.clip((start + rows["truth"].to_numpy() * 8).astype(int), 0, len(ap3) - 1)
+    peak = np.array([ap3[int(s):max(int(s) + 1, n + 1)].max() for s, n in zip(start, end)])
+    stormy = peak >= storm_ap
+    print(f"{len(rows):,} orbits of {rows['NORAD_CAT_ID'].nunique():,} objects; "
+          f"{stormy.mean():.0%} with ap reaching {storm_ap}+ before reentry")
+    out = {}
+    for name, m in [("all", np.ones(len(rows), bool)), (f"storm (ap {storm_ap}+) before reentry", stormy),
+                    ("no storm", ~stormy)]:
+        for label, pred in [("7-day ap held fixed (now)", held), ("actual 3-hourly ap (perfect forecast)", perfect)]:
+            hours = np.abs(pred - rows["truth"].to_numpy()) * 24
+            out[(name, label)] = {lead: np.nanmedian(hours[m & (rows["truth"] >= lo).to_numpy() & (rows["truth"] < hi).to_numpy()])
+                                  for lo, hi, lead in LEAD_BANDS}
+    print("Median error (hours) by time before reentry")
+    print(pd.DataFrame(out).T.to_string(float_format="{:.1f}".format))
+
+
+def transfer_orbits(max_step=1.0):
+    """Part 1: do the Moon's and Sun's gravity fix the lifetimes of transfer orbits?
+
+    The same objects, starting orbits, fitted B and solar-cycle forecast as Part 1
+    (lifetime_model.py), simulated with drag only, drag and J2, and drag, J2, Sun
+    and Moon (lunisolar.py). Nothing is fitted, so every transfer orbit is scored.
+    Run download_transfer_orbits.py first.
+    """
+    import time
+
+    from download_transfer_orbits import OUT_FILE as TRANSFER_FILE
+    from lifetime_model import MAX_YEARS, OUT_FILE as LIFETIME_FILE, error_by_band, weather_paths
+    from lunisolar import orbit_vectors, propagate_lunisolar
+
+    table = pd.read_parquet(LIFETIME_FILE)
+    angles = pd.read_parquet(TRANSFER_FILE)[["NORAD_CAT_ID", "EPOCH", "RA_OF_ASC_NODE", "ARG_OF_PERICENTER"]]
+    table = table.merge(angles, on=["NORAD_CAT_ID", "EPOCH"])
+    table = table[table["B_fit"] > 0].reset_index(drop=True)
+    print(f"{len(table)} transfer orbits with a fitted B ({(table['OBJECT_TYPE'] == 'R/B').sum()} rocket bodies)")
+
+    atm = MsisAtmosphere()
+    flux, ap = weather_paths(table)["solar-cycle forecast"]
+
+    def density(h, idx, t):
+        month = np.clip((t / 30.44).astype(int), 0, flux.shape[1] - 1)
+        return atm.density(h, flux[idx[:, None], month], ap[idx[:, None], month])
+
+    e_vec, j_vec = orbit_vectors(table["eccentricity"], table["INCLINATION"], table["RA_OF_ASC_NODE"],
+                                 table["ARG_OF_PERICENTER"])
+    jd0 = pd.DatetimeIndex(table["EPOCH"]).to_julian_date().to_numpy()
+    args = (table["a_km"].to_numpy(), e_vec, j_vec, table["B_fit"].to_numpy(), density, jd0)
+    preds = {"drag only (Part 1)": table["solar-cycle forecast"].to_numpy()}
+    for name, forces in [("drag + J2", dict(sun=False, moon=False)), ("drag + J2 + Sun + Moon", {})]:
+        start = time.time()
+        preds[name] = propagate_lunisolar(*args, max_days=MAX_YEARS * 365.25, max_step=max_step, **forces)
+        print(f"{name}: {time.time() - start:.0f} s")
+    print("\nMedian error by true remaining lifetime (no answer within 30 years counts as 30 years)")
+    show(error_by_band(table, preds))
+    print("\nshare with an answer within 30 years:",
+          {name: f"{np.isfinite(p).mean():.0%}" for name, p in preds.items()})
+    truth = table["days_left"].to_numpy()
+    for name, p in preds.items():
+        ratio = np.where(np.isfinite(p), p, MAX_YEARS * 365.25) / truth
+        print(f"{name}: predicted / actual, middle half {np.percentile(ratio, 25):.2f} to {np.percentile(ratio, 75):.2f}")
+
+
 EXPERIMENTS = {"hybrid_corrections": hybrid_corrections, "hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning, "xgboost_tuning": xgboost_tuning,
                "solar_forecast": solar_forecast, "drag_stability": drag_stability,
-               "final_days_window": final_days_window, "drag_cap": drag_cap}
+               "final_days_window": final_days_window, "drag_cap": drag_cap,
+               "hybrid_drag_cap": hybrid_drag_cap,
+               "final_days_ranges": final_days_ranges,
+               "storm_bound": storm_bound,
+               "transfer_orbits": transfer_orbits}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in EXPERIMENTS:

@@ -39,16 +39,16 @@ def log(message):
         f.write(line + "\n")
 
 
-def fetch(st, ids, start, end):
+def fetch(st, ids, start, end, fields=FIELDS):
     """Orbit history for these objects between two dates, splitting the request if it's too big."""
     text = st.get(f"query/class/gp_history/NORAD_CAT_ID/{','.join(map(str, ids))}"
-                  f"/EPOCH/{start:%Y-%m-%d}--{end:%Y-%m-%d}/predicates/{FIELDS}/format/csv")
+                  f"/EPOCH/{start:%Y-%m-%d}--{end:%Y-%m-%d}/predicates/{fields}/format/csv")
     if not text.strip():
         return pd.DataFrame()
     if not text.startswith("NORAD_CAT_ID"):
         if "out of bounds" in text and len(ids) > 1:
             half = len(ids) // 2
-            return pd.concat([fetch(st, ids[:half], start, end), fetch(st, ids[half:], start, end)])
+            return pd.concat([fetch(st, ids[:half], start, end, fields), fetch(st, ids[half:], start, end, fields)])
         raise RuntimeError(f"unexpected reply from Space-Track: {text[:200]}")
     return pd.read_csv(io.StringIO(text), parse_dates=["EPOCH"])
 

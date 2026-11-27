@@ -5,6 +5,9 @@ For each object and day in the training table:
 2. simulate the orbit forward with NRLMSIS density, holding the current space
    weather fixed, until it reenters
 
+A fitted B above MAX_B is too large to be drag (gravity or thrusters are moving
+the orbit, EXPERIMENTS.md 021), so it gets no prediction, like a negative one.
+
 Predictions are made for one day a week per object (simulating all 3.7 million
 rows would take hours) and saved to data/spacetrack/physics_predictions.parquet.
 
@@ -29,6 +32,7 @@ OTHER_WINDOWS = (7, 14, 60)  # also saved: how B differs over shorter and longer
 MIN_FIT_POINTS = 5
 EVERY = 7         # predict from one orbit a week per object
 MAX_DAYS = 3650.0
+MAX_B = 1.0       # m^2/kg: more than about 0.45 m^2 per kg, foil rather than hardware
 
 
 def semi_major_axis(mean_motion):
@@ -85,10 +89,21 @@ def fit_drag_parameter(df, g, window=FIT_WINDOW):
     return B, n.astype(int)
 
 
+def plausible(B):
+    """True where B can be drag: positive and at most MAX_B."""
+    B = np.asarray(B, dtype=float)
+    return np.isfinite(B) & (B > 0) & (B <= MAX_B)
+
+
 def forecast(df, B, atm, max_days=MAX_DAYS):
-    """Days until reentry from each row's orbit, holding its 81-day flux and 7-day Ap fixed."""
+    """Days until reentry from each row's orbit, holding its 81-day flux and 7-day Ap fixed.
+
+    NaN where B isn't plausible() or the object is still up after max_days.
+    """
     days = np.full(len(df), np.nan)
-    ok = np.isfinite(B) & (B > 0)
+    ok = plausible(B)
+    if not ok.any():
+        return days
     rows = df[ok]
     profile = atm.profile(rows["f107_81d"].to_numpy(), rows["ap_7d"].to_numpy())
     days[ok] = propagate(rows["a_km"].to_numpy(), rows["eccentricity"].to_numpy(), B[ok],

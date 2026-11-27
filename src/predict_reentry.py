@@ -19,10 +19,11 @@ import requests
 import xgboost as xgb
 
 from atmosphere import MsisAtmosphere
+from ground_track import latitude_band
 from build_reentry_dataset import DATA_DIR, R_EARTH, add_catalog_info, add_space_weather, add_trends
 from download_history import FIELDS
-from physics_model import fit_drag_parameter, forecast, prepare, unit_decay_rate
-from train_reentry_model import HYBRID_FEATURES, MODELS_DIR
+from physics_model import MAX_B, fit_drag_parameter, forecast, plausible, prepare, unit_decay_rate
+from train_reentry_model import HYBRID_FEATURES, MODELS_DIR, NO_PHYSICS_DAYS, RESULTS_DIR
 from uncertainty import group_of
 
 HISTORY_DAYS = 45
@@ -33,6 +34,7 @@ MAX_PHYSICS_DAYS = 365.25 * 30
 SHORT_WINDOW = 8
 SHORT_WINDOW_BELOW = 10  # days: switch when the usual prediction is closer than this
 CONFORMAL_FILE = MODELS_DIR / "conformal_widths.json"
+RANGES_FILE = RESULTS_DIR / "live_forecast_widths.json"  # physics ranges from forecast_ranges.py
 
 
 def refresh_space_weather():
@@ -64,6 +66,14 @@ def features(history):
     return prepare(df)
 
 
+def short_window_range(days, row):
+    """90% range (low, high) for the 8-day-B physics prediction from every orbit (EXPERIMENTS.md 023)."""
+    saved = json.loads(RANGES_FILE.read_text())
+    widths = saved["widths"].get(f"{SHORT_WINDOW}-day, every orbit")
+    width = widths[int(group_of(row)[0])][int(np.digitize(days, saved["bands"][1:-1]))] if widths else None
+    return None if width is None else (days / 10 ** width, days * 10 ** width)
+
+
 def conformal_range(days, row):
     """90% range (low, high) from uncertainty.py's calibration, if it has been run."""
     if not CONFORMAL_FILE.exists():
@@ -90,27 +100,38 @@ def predict(st, norad_id):
 
     result = {"epoch": latest["EPOCH"].iloc[0], "perigee": latest["PERIAPSIS"].iloc[0],
               "apogee": latest["APOAPSIS"].iloc[0], "B": latest["B_fit"].iloc[0],
+              "inclination": latest["INCLINATION"].iloc[0],
               "perigee_rate": latest["perigee_rate_30d"].iloc[0], "physics_days": physics,
               "hybrid_days": None, "range": None, "short_window": False,
               "is_payload": latest["OBJECT_TYPE"].iloc[0] == "PAY"}
     if np.isfinite(physics) and physics < SHORT_WINDOW_BELOW:
         B_short = fit_drag_parameter(every, unit_decay_rate(every, atm), SHORT_WINDOW)[0][-1]
-        if np.isfinite(B_short) and B_short > 0:
+        if plausible(B_short):
             result["physics_days"] = forecast(every.iloc[[-1]], np.array([B_short]), atm)[0]
             result["short_window"] = True
+            if np.isfinite(result["physics_days"]):
+                result["range"] = short_window_range(result["physics_days"], every.iloc[[-1]])
         return result
-    if (not np.isfinite(physics) or physics > 365) and latest["B_fit"].iloc[0] > 0:
+    B = latest["B_fit"].iloc[0]
+    if (not np.isfinite(physics) or physics > 365) and plausible(B):
         # Over years the Sun's cycle matters: use the solar-cycle forecast instead (EXPERIMENTS.md 017).
         result["physics_days"] = physics = years_ahead(latest, atm)
         result["solar_cycle"] = True
     # The hybrid only learned from objects in their final year, so only trust it inside that range.
-    if not np.isfinite(physics) or physics > 2 * 365:
+    # Where B is too large to be drag the physics has no answer, and the hybrid works from
+    # NO_PHYSICS_DAYS, as it did in training (EXPERIMENTS.md 022).
+    if B > MAX_B:
+        base = NO_PHYSICS_DAYS
+        latest["log_physics_days"] = np.nan
+    elif not np.isfinite(physics) or physics > 2 * 365:
         return result
-    latest["log_physics_days"] = np.log10(physics)
+    else:
+        base = physics
+        latest["log_physics_days"] = np.log10(physics)
     latest["log_B"] = np.log10(latest["B_fit"].where(latest["B_fit"] > 0))
     hybrid = xgb.XGBRegressor()
     hybrid.load_model(MODELS_DIR / "reentry_hybrid.json")
-    days = physics * 10 ** hybrid.predict(latest[HYBRID_FEATURES])[0]
+    days = base * 10 ** hybrid.predict(latest[HYBRID_FEATURES])[0]
     result["hybrid_days"] = days
     result["range"] = conformal_range(days, latest)
     return result
@@ -138,26 +159,35 @@ def describe(result):
         lines.append("Not sinking over the last month (it may be holding its altitude with thrusters),")
         lines.append("so drag alone can't say when it will come down.")
         return lines
-    if not np.isfinite(physics):
+    if result["B"] > MAX_B:
+        lines.append("Physics model: no answer. Over the last month the orbit changed faster than drag can")
+        lines.append("explain (thrusters, or the Sun's and Moon's gravity reshaping a stretched orbit).")
+    elif not np.isfinite(physics):
         lines.append(f"Physics model: more than {MAX_PHYSICS_DAYS / 365.25:.0f} years at today's solar activity.")
         return lines
     # Within a few days, the time of day matters; further out, the date is enough.
-    when = "%Y-%m-%d %H:%M UTC" if physics < 3 else "%Y-%m-%d"
-    end = result["epoch"] + pd.Timedelta(days=physics)
-    lines.append(f"Physics model: about {_duration(physics)} (around {end:{when}})")
+    soonest = physics if np.isfinite(physics) else result["hybrid_days"] or np.inf
+    when = "%Y-%m-%d %H:%M UTC" if soonest < 3 else "%Y-%m-%d"
+    if np.isfinite(physics):
+        end = result["epoch"] + pd.Timedelta(days=physics)
+        lines.append(f"Physics model: about {_duration(physics)} (around {end:{when}})")
     if result.get("solar_cycle"):
         lines.append("(with a forecast of the Sun's 11-year cycle; a rough guide this far ahead)")
     if result.get("short_window"):
         lines.append(f"(drag measured over the last {SHORT_WINDOW} days of tracking: our most accurate")
         lines.append(" method this close to reentry; the official forecasts are better in the final day)")
-    if result["hybrid_days"] is not None:
-        end = result["epoch"] + pd.Timedelta(days=result["hybrid_days"])
-        lines.append(f"Hybrid model:  about {_duration(result['hybrid_days'])} (around {end:{when}})")
+    if result["hybrid_days"] is not None or result["range"] is not None:
+        if result["hybrid_days"] is not None:
+            end = result["epoch"] + pd.Timedelta(days=result["hybrid_days"])
+            lines.append(f"Hybrid model:  about {_duration(result['hybrid_days'])} (around {end:{when}})")
         if result["range"] is not None:
             lo, hi = (result["epoch"] + pd.Timedelta(days=d) for d in result["range"])
             lines.append(f"90% range:     {lo:{when}} to {hi:{when}}")
-    elif physics > 2 * 365:
+    elif np.isfinite(physics) and physics > 2 * 365:
         lines.append("More than about two years away, beyond what the hybrid model was trained on.")
+    if result.get("inclination") is not None and (np.isfinite(physics) or result["hybrid_days"] is not None):
+        band = latitude_band(result["inclination"])
+        lines.append(f"Where: anywhere between {band:.0f}°S and {band:.0f}°N, the latitudes its orbit passes over")
     if result.get("is_payload") and not result.get("short_window"):
         lines.append("Note: if this satellite still uses thrusters to hold its orbit, it will stay up longer.")
     return lines

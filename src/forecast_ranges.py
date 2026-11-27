@@ -1,4 +1,5 @@
-"""90% ranges for the website's live physics forecasts (live_forecasts.py).
+"""90% ranges for the physics forecasts: the website's (live_forecasts.py) and the
+lookup tool's in the final days (predict_reentry.py).
 
 The live forecasts use the physics model only (the trained hybrid stays private,
 see the README), on orbits collected from CelesTrak. An object is often first
@@ -13,12 +14,15 @@ calibrated on the latest RECALIBRATION_DAYS of reentries:
 - "8-day": within 10 days of reentry, B fitted over the last 8 days of every
   orbit (EXPERIMENTS.md 015), from download_final_orbits.py's orbits thinned to
   one every 6 hours, as often as the live job collects them.
+- "8-day, every orbit": the same with every orbit, as the lookup tool gets them
+  from Space-Track, scored against the reentry time of the final official (TIP)
+  message rather than the catalog date (EXPERIMENTS.md 023).
 
 A fitted B above MAX_B means something other than drag is moving the orbit
 (EXPERIMENTS.md 021), so those forecasts are left out here as they are live.
 
-The truth is the catalog decay date at midday, as everywhere else in this
-project and as the live forecasts are scored. Only the widths, a few aggregate
+Except for "8-day, every orbit", the truth is the catalog decay date at midday,
+as everywhere else in this project and as the live forecasts are scored. Only the widths, a few aggregate
 numbers, are saved, to results/live_forecast_widths.json.
 
     python src/forecast_ranges.py
@@ -31,15 +35,13 @@ import pandas as pd
 
 from atmosphere import MsisAtmosphere
 from build_reentry_dataset import DATA_DIR
-from physics_model import fit_drag_parameter, forecast, unit_decay_rate
-from predict_reentry import SHORT_WINDOW, SHORT_WINDOW_BELOW, features
-from train_reentry_model import DATA_FILE, PHYSICS_FILE, RESULTS_DIR
+from physics_model import MAX_B, fit_drag_parameter, forecast, unit_decay_rate
+from predict_reentry import RANGES_FILE as OUT_FILE, SHORT_WINDOW, SHORT_WINDOW_BELOW, features
+from train_reentry_model import DATA_FILE, PHYSICS_FILE
 from uncertainty import BANDS, MIN_CELL, RECALIBRATION_DAYS, band_of, conformal_quantile, group_of
 
-OUT_FILE = RESULTS_DIR / "live_forecast_widths.json"
 GROUPS = ["debris and rocket bodies", "other payloads", "Starlink"]
 DAILY_WINDOWS = (7, 14, 30)
-MAX_B = 1.0  # m^2/kg: higher fits aren't drag (EXPERIMENTS.md 021)
 COLLECT_EVERY = "6h"
 
 
@@ -91,7 +93,6 @@ def short_widths(atm):
     every = every.merge(decay, on="NORAD_CAT_ID", how="inner").dropna(subset=["DECAY_DATE"])
     every = recent(every).reset_index(drop=True)
     B = fit_drag_parameter(every, unit_decay_rate(every, atm), SHORT_WINDOW)[0]
-    B[B > MAX_B] = np.nan
     pred = forecast(every, B, atm, max_days=4 * SHORT_WINDOW_BELOW)
     truth = (every["DECAY_DATE"] + pd.Timedelta(hours=12) - every["EPOCH"]).dt.total_seconds().to_numpy() / 86400
     near = np.isfinite(pred) & (pred < SHORT_WINDOW_BELOW)
@@ -101,10 +102,44 @@ def short_widths(atm):
     return table
 
 
+def final_reentry_times():
+    """Each object's reentry time from its final TIP message, issued after reentry (compare_official.py)."""
+    from download_tip import OUT_FILE as TIP_FILE
+
+    tip = pd.read_csv(TIP_FILE, parse_dates=["MSG_EPOCH", "DECAY_EPOCH"]).sort_values(["NORAD_CAT_ID", "MSG_EPOCH"])
+    return tip.groupby("NORAD_CAT_ID")["DECAY_EPOCH"].last().rename("reentry")
+
+
+def fresh_predictions(atm):
+    """From every orbit in the final 40 days: the 8-day-B prediction and the true days left, where under 10 days.
+
+    Orbits within an hour of reentry are left out, as in compare_official.py.
+    """
+    from download_final_orbits import OUT_FILE as FINAL_ORBITS_FILE
+
+    every = features(pd.read_parquet(FINAL_ORBITS_FILE))
+    every["B_short"] = fit_drag_parameter(every, unit_decay_rate(every, atm), SHORT_WINDOW)[0]
+    every = every.join(final_reentry_times(), on="NORAD_CAT_ID").dropna(subset=["reentry"]).reset_index(drop=True)
+    every["pred"] = forecast(every, every["B_short"].to_numpy(), atm, max_days=4 * SHORT_WINDOW_BELOW)
+    every["truth"] = (every["reentry"] - every["EPOCH"]).dt.total_seconds() / 86400
+    every["group"] = group_of(every)
+    near = np.isfinite(every["pred"]) & (every["pred"] < SHORT_WINDOW_BELOW) & (every["truth"] > 1 / 24)
+    return every[near].reset_index(drop=True)
+
+
+def fresh_widths(atm):
+    rows = fresh_predictions(atm)
+    rows = rows[rows["reentry"] >= rows["reentry"].max() - pd.Timedelta(days=RECALIBRATION_DAYS)]
+    table, counts = widths_table(rows["pred"].to_numpy(), rows["truth"].to_numpy(), rows["group"].to_numpy())
+    print(f"{SHORT_WINDOW}-day B, every orbit: {rows['NORAD_CAT_ID'].nunique():,} objects, rows per band {counts[0][:2]}")
+    return table
+
+
 def main():
     atm = MsisAtmosphere()
     widths, first, last = daily_widths()
     widths[f"{SHORT_WINDOW}-day"] = short_widths(atm)
+    widths[f"{SHORT_WINDOW}-day, every orbit"] = fresh_widths(atm)
     OUT_FILE.write_text(json.dumps({
         "coverage": 0.9, "bands": BANDS[:-1] + [1e9], "groups": GROUPS,
         "calibrated_on": f"reentries from {first:%Y-%m-%d} to {last:%Y-%m-%d}",
@@ -114,7 +149,7 @@ def main():
     for name, table in widths.items():
         for group, row in zip(GROUPS, table):
             factors = ", ".join("—" if w is None else f"{10 ** w:.2f}x" for w in row)
-            print(f"{name:>6} {group:>24}: {factors}")
+            print(f"{name:>18} {group:>24}: {factors}")
     print(f"saved {OUT_FILE}")
 
 

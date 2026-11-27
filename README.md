@@ -18,7 +18,7 @@ On objects that reentered from 2024 onward, which no model saw during training (
 | Physics only (drag simulation, no training) | 22% | 17% | 21% | 25% | 24% | 52% |
 | XGBoost (tuned) | 27% | **15%** | 19% | 19% | 19% | 63% |
 | Gaussian process | 24% | 18% | 25% | 23% | 23% | 54% |
-| **Physics + ML hybrid** | **21%** | 16% | **18%** | **16%** | **16%** | **67%** |
+| **Physics + ML hybrid** | **19%** | **15%** | **18%** | **16%** | **16%** | **68%** |
 
 ![Error by time left until reentry](results/error_by_horizon.png)
 
