@@ -14,6 +14,8 @@ on:
     branches: [main]
     paths:
       - src/live_forecasts.py
+      - src/physics_model.py
+      - src/ground_track.py
       - results/live_forecast_widths.json
       - .github/workflows/forecasts.yml
   workflow_dispatch:
@@ -58,7 +60,9 @@ jobs:
           key: live-orbits-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: live-orbits-
 
-      - run: python src/live_forecasts.py
+      # A push only reruns the forecasts on the orbits collected so far: CelesTrak
+      # refuses the same download twice within 2 hours, and the schedule fetches anyway.
+      - run: python src/live_forecasts.py ${{ github.event_name == 'push' && '--no-download' || '' }}
 
       - name: Save the collected orbits
         if: always() && hashFiles('data/live/orbits.parquet') != ''
