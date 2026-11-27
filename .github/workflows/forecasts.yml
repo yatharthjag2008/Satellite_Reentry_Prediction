@@ -10,6 +10,12 @@ name: forecasts
 on:
   schedule:
     - cron: "17 */6 * * *"
+  push:   # and right away when the forecasting code changes
+    branches: [main]
+    paths:
+      - src/live_forecasts.py
+      - results/live_forecast_widths.json
+      - .github/workflows/forecasts.yml
   workflow_dispatch:
 
 permissions:
