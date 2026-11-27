@@ -8,3 +8,5 @@ data/spacetrack/
 models/
 data/msis_density_table.npz
 _site/
+data/live/
+forecast-data/
