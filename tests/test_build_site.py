@@ -36,3 +36,12 @@ def test_daily_solar_flux_fills_forward_and_stops_at_the_given_day():
     assert len(out["values"]) == 33  # 1 Jan to 2 Feb
     assert out["values"][:3] == [150, 150, 150]  # the missing day keeps the last known value
     assert out["values"][-2:] == [120, 120]
+
+
+def test_source_prefers_the_forecast_runs_fresher_copy(tmp_path, monkeypatch):
+    import build_site
+
+    monkeypatch.setattr(build_site, "FORECAST_DIR", tmp_path)
+    assert build_site.source("satcat.csv") == build_site.DATA_DIR / "satcat.csv"
+    (tmp_path / "satcat.csv").write_text("x")
+    assert build_site.source("satcat.csv") == tmp_path / "satcat.csv"

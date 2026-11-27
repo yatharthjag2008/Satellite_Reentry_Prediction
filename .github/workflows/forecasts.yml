@@ -1,0 +1,79 @@
+name: forecasts
+
+# Every 6 hours: collect CelesTrak orbits, forecast reentries with the physics
+# model and score past forecasts (src/live_forecasts.py), publish the results to
+# the forecast-data branch, then rebuild the website.
+#
+# The collected orbits come from Space-Track through CelesTrak, so they stay in
+# this repository's Actions cache and are never published.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # push the forecast-data branch
+  actions: write    # start the website workflow
+
+concurrency:
+  group: forecasts
+  cancel-in-progress: false
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: forecast-data
+          path: forecast-data
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Restore the NRLMSIS density table
+        id: msis
+        uses: actions/cache@v4
+        with:
+          path: data/msis_density_table.npz
+          key: msis-${{ hashFiles('src/atmosphere.py') }}
+      - if: steps.msis.outputs.cache-hit != 'true'
+        run: python src/atmosphere.py
+
+      - name: Restore the orbits collected so far
+        uses: actions/cache/restore@v4
+        with:
+          path: data/live
+          key: live-orbits-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: live-orbits-
+
+      - run: python src/live_forecasts.py
+
+      - name: Save the collected orbits
+        if: always() && hashFiles('data/live/orbits.parquet') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/live
+          key: live-orbits-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # One commit that replaces the branch, so its history doesn't grow by a
+      # copy of the log every 6 hours.
+      - name: Publish the forecasts
+        working-directory: forecast-data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q --orphan latest
+          git add -A
+          git commit -q -m "Forecasts made $(date -u '+%Y-%m-%d %H:%M') UTC"
+          git push -q --force origin latest:forecast-data
+
+      - name: Rebuild the website
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main

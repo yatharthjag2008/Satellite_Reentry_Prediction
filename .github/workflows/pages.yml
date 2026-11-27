@@ -1,7 +1,8 @@
 name: website
 
 # Builds the public site (src/build_site.py) from the CelesTrak data and plots
-# in the repo and publishes it with GitHub Pages.
+# in the repo and the live forecasts on the forecast-data branch, and publishes
+# it with GitHub Pages. The forecasts workflow starts it after every run.
 
 on:
   push:
@@ -22,6 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: forecast-data
+          path: forecast-data
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"

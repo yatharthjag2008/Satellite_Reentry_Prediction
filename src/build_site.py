@@ -1,9 +1,12 @@
 """Build the public website into _site/, which GitHub Pages serves.
 
 The site only uses public data: the CelesTrak catalog and space weather in
-data/, and the plots in results/. Space-Track data and the trained models stay
-on your own computer (see the README), so the site has no live predictions.
+data/, the plots in results/ and, if the forecast-data branch is checked out in
+forecast-data/, the live physics forecasts from live_forecasts.py with that
+run's fresher catalog and weather. Space-Track data and the trained models stay
+on your own computer (see the README).
 
+    git worktree add forecast-data forecast-data    # optional: the live forecasts
     python src/build_site.py
     python -m http.server -d _site      # then open http://localhost:8000
 """
@@ -19,6 +22,8 @@ DATA_DIR = ROOT / "data"
 RESULTS_DIR = ROOT / "results"
 SITE_DIR = ROOT / "site"
 OUT_DIR = ROOT / "_site"
+FORECAST_DIR = ROOT / "forecast-data"
+FORECAST_FILES = ["forecasts.json", "scores.json"]
 
 CATALOG_COLUMNS = [
     "OBJECT_NAME", "OBJECT_ID", "NORAD_CAT_ID", "OBJECT_TYPE", "OPS_STATUS_CODE", "OWNER",
@@ -65,6 +70,12 @@ def daily_solar_flux(sw, until):
     return {"start": f"{days[0]:%Y-%m-%d}", "values": values.round().astype(int).tolist()}
 
 
+def source(name):
+    """The forecast run's copy of a CelesTrak file if there is one, since it's refreshed daily."""
+    fresh = FORECAST_DIR / name
+    return fresh if fresh.exists() else DATA_DIR / name
+
+
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
@@ -75,11 +86,15 @@ def main():
         shutil.rmtree(OUT_DIR)
     shutil.copytree(SITE_DIR, OUT_DIR)
 
-    satcat = pd.read_csv(DATA_DIR / "satcat.csv")
+    satcat = pd.read_csv(source("satcat.csv"))
     write_json(OUT_DIR / "data" / "catalog.json", compact_catalog(satcat))
 
-    sw = pd.read_csv(DATA_DIR / "SW-All.csv", parse_dates=["DATE"], usecols=["DATE", "F10.7_OBS_LAST81"])
+    sw = pd.read_csv(source("SW-All.csv"), parse_dates=["DATE"], usecols=["DATE", "F10.7_OBS_LAST81"])
     write_json(OUT_DIR / "data" / "solar_flux.json", daily_solar_flux(sw, pd.Timestamp.today().normalize()))
+
+    for name in FORECAST_FILES:
+        if (FORECAST_DIR / name).exists():
+            shutil.copy2(FORECAST_DIR / name, OUT_DIR / "data" / name)
 
     (OUT_DIR / "plots").mkdir()
     for plot in PLOTS:
