@@ -9,7 +9,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.15"
       - run: pip install -r requirements.txt
       # The NRLMSIS table is generated, not committed; build it so the atmosphere tests run too.
       - run: python src/atmosphere.py
