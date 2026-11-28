@@ -28,7 +28,7 @@ from build_reentry_dataset import DATA_DIR, R_EARTH, add_space_weather
 from download_early_orbits import OUT_FILE as EARLY_FILE
 from lunisolar import days_from_rows
 from orbit_decay import propagate
-from physics_model import fit_drag_parameter, prepare, unit_decay_rate
+from physics_model import MAX_B, fit_drag_parameter, prepare, unit_decay_rate
 from solar_cycle import forecast_monthly
 
 OUT_FILE = DATA_DIR / "spacetrack" / "lifetime_predictions.parquet"
@@ -101,6 +101,11 @@ def weather_paths(table):
             "actual flux (perfect forecast)": (actual, actual_ap)}
 
 
+def usable_fit(table):
+    """True where the fitted B can be drag: positive and at most MAX_B (EXPERIMENTS.md 021)."""
+    return ((table["B_fit"] > 0) & (table["B_fit"] <= MAX_B)).to_numpy()
+
+
 def uses_lunisolar(table):
     """True for transfer orbits whose orientation is known: those get the Sun's and Moon's gravity too."""
     if not set(ANGLES) <= set(table.columns):
@@ -108,20 +113,23 @@ def uses_lunisolar(table):
     return ((table["APOAPSIS"] > TRANSFER_APOGEE) & table[ANGLES].notna().all(axis=1)).to_numpy()
 
 
-def simulate(table, flux, ap, atm):
+def simulate(table, flux, ap, atm, max_b=MAX_B):
     """Days until reentry under a month-by-month flux and Ap path for each object.
 
     Drag only, except transfer orbits with known angles, which also get J2 and the
-    Moon's and Sun's tides (EXPERIMENTS.md 025: 503% to 28% median error).
+    Moon's and Sun's tides (EXPERIMENTS.md 025: 503% to 28% median error). Like
+    everywhere else, a fitted B that is negative or above max_b isn't drag, so it
+    gets no answer (EXPERIMENTS.md 021).
     """
     def density(h, idx, t):
         month = np.clip((t / 30.44).astype(int), 0, flux.shape[1] - 1)
         return atm.density(h, flux[idx[:, None], month], ap[idx[:, None], month])
 
     B = table["B_fit"].to_numpy()
-    lunisolar = uses_lunisolar(table) & (B > 0)
+    drag = (B > 0) & (B <= max_b)
+    lunisolar = uses_lunisolar(table) & drag
     days = np.full(len(table), np.nan)
-    rows = np.flatnonzero((B > 0) & ~lunisolar)
+    rows = np.flatnonzero(drag & ~lunisolar)
     if len(rows):
         days[rows] = propagate(table["a_km"].to_numpy()[rows], table["eccentricity"].to_numpy()[rows], B[rows],
                                lambda h, idx, t: density(h, rows[idx], t), max_days=MAX_YEARS * 365.25)
@@ -159,7 +167,7 @@ def error_by_band(table, predictions):
 def main():
     start = time.time()
     table = early_table()
-    print(f"{len(table):,} objects; B fitted for {(table['B_fit'] > 0).mean():.0%}; "
+    print(f"{len(table):,} objects; a B that can be drag for {usable_fit(table).mean():.0%}; "
           f"{uses_lunisolar(table).sum()} transfer orbits with the Sun and Moon  [{time.time() - start:.0f} s]")
     atm = MsisAtmosphere()
     predictions = {}
@@ -169,7 +177,7 @@ def main():
         print(f"simulated: {name}  [{time.time() - start:.0f} s]")
     table.to_parquet(OUT_FILE, index=False)
 
-    usable = (table["B_fit"] > 0).to_numpy()
+    usable = usable_fit(table)
     for group, mask in object_groups(table).items():
         mask = mask & usable
         if not mask.any():

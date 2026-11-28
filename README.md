@@ -35,13 +35,13 @@ Every number comes from [`EXPERIMENTS.md`](EXPERIMENTS.md), a numbered log of 26
 
 ### Whole lifetimes from the first month (Part 1)
 
-From only an object's orbits 10–40 days after launch, the physics model with a solar-cycle forecast predicts how long it will stay up, often years ahead. For transfer orbits it also includes the Moon's and Sun's gravity (below). On 2,982 satellites and rocket bodies launched since 2000:
+From only an object's orbits 10–40 days after launch, the physics model with a solar-cycle forecast predicts how long it will stay up, often years ahead. For transfer orbits it also includes the Moon's and Sun's gravity (below). On 2,951 satellites and rocket bodies launched since 2000 whose fitted B can be drag:
 
 | Future solar flux | 1–3 years left | 3–10 years left | Overall |
 |---|---|---|---|
-| Today's held fixed | 49% | 232% | 69% |
-| **Solar-cycle forecast** | 30% | **19%** | **26%** |
-| Perfect forecast (upper bound) | 16% | 19% | 19% |
+| Today's held fixed | 48% | 235% | 68% |
+| **Solar-cycle forecast** | 29% | **19%** | **26%** |
+| Perfect forecast (upper bound) | 16% | 19% | 18% |
 
 Near-circular satellites come out at about 25%, near-circular rocket bodies at about 21% and rocket bodies in transfer orbits at 29%. Tested on launches from a later period (2012–2015), the physics held up (23% for satellites), while ML models trained on earlier launches did not (experiment 019). It doesn't work for Starlink, whose lifetime is set by the operator.
 

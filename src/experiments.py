@@ -420,7 +420,7 @@ def transfer_orbits(max_step=1.0):
     jd0 = pd.DatetimeIndex(table["EPOCH"]).to_julian_date().to_numpy()
     args = (table["a_km"].to_numpy(), e_vec, j_vec, table["B_fit"].to_numpy(), density, jd0)
     # Part 1 itself now uses the Sun and Moon for these orbits, so drag only is simulated here.
-    preds = {"drag only": simulate(table.drop(columns=ANGLES), flux, ap, atm)}
+    preds = {"drag only": simulate(table.drop(columns=ANGLES), flux, ap, atm, max_b=np.inf)}  # as first run, before Part 1 had the cap
     for name, forces in [("drag + J2", dict(sun=False, moon=False)), ("drag + J2 + Sun + Moon", {})]:
         start = time.time()
         preds[name] = propagate_lunisolar(*args, max_days=MAX_YEARS * 365.25, max_step=max_step, **forces)
