@@ -154,7 +154,8 @@ def propagate_lunisolar(a_km, e_vec, j_vec, B, density, jd0, max_days=3650.0, st
             e_hat = np.where(e_len[:, None] > 1e-9, e_ / np.maximum(e_len, 1e-12)[:, None], 0.0)
             j_hat = j_ / np.linalg.norm(j_, axis=1)[:, None]
             dj_len = -e_len * de_len / np.sqrt(np.maximum(1 - e_len ** 2, 1e-12))
-        de, dj = secular_rates(a_, e_, j_, jd0[idx] + t_, sun=sun, moon=moon, j2=j2)
+            # A Runge-Kutta stage can overshoot the final orbit to a < 0; fallen() catches the NaN.
+            de, dj = secular_rates(a_, e_, j_, jd0[idx] + t_, sun=sun, moon=moon, j2=j2)
         return da, de + de_len[:, None] * e_hat, dj + dj_len[:, None] * j_hat
 
     def fallen(a_, e_):
