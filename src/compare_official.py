@@ -9,6 +9,10 @@ The final TIP message for each object is issued after reentry and is used as the
 true reentry time (catalog decay dates are only to the day). Messages issued
 within an hour of reentry are left out.
 
+The physics here is drag only: these orbits don't include the angles that the
+Sun-and-Moon simulation needs (EXPERIMENTS.md 026). Only 0.7% of the messages
+(73, on 21 objects) are for transfer orbits, so this barely changes the table.
+
 Run download_tip.py and train_reentry_model.py first.
 
     python src/compare_official.py           # one orbit a day, as in the training table
