@@ -35,17 +35,17 @@ Every number comes from [`EXPERIMENTS.md`](EXPERIMENTS.md), a numbered log of 25
 
 ### Whole lifetimes from the first month (Part 1)
 
-From only an object's orbits 10–40 days after launch, the physics model with a solar-cycle forecast predicts how long it will stay up, often years ahead. On 2,982 satellites and rocket bodies launched since 2000:
+From only an object's orbits 10–40 days after launch, the physics model with a solar-cycle forecast predicts how long it will stay up, often years ahead. For transfer orbits it also includes the Moon's and Sun's gravity (below). On 2,982 satellites and rocket bodies launched since 2000:
 
 | Future solar flux | 1–3 years left | 3–10 years left | Overall |
 |---|---|---|---|
-| Today's held fixed | 54% | 247% | 84% |
-| **Solar-cycle forecast** | 31% | **20%** | **29%** |
-| Perfect forecast (upper bound) | 16% | 20% | 20% |
+| Today's held fixed | 49% | 232% | 69% |
+| **Solar-cycle forecast** | 30% | **19%** | **26%** |
+| Perfect forecast (upper bound) | 16% | 19% | 19% |
 
-Near-circular satellites come out at about 25% and rocket bodies at about 21%. Tested on launches from a later period (2012–2015), the physics held up (23% for satellites), while ML models trained on earlier launches did not (experiment 019). It doesn't work for Starlink, whose lifetime is set by the operator.
+Near-circular satellites come out at about 25%, near-circular rocket bodies at about 21% and rocket bodies in transfer orbits at 29%. Tested on launches from a later period (2012–2015), the physics held up (23% for satellites), while ML models trained on earlier launches did not (experiment 019). It doesn't work for Starlink, whose lifetime is set by the operator.
 
-**Transfer orbits.** Rocket bodies left in stretched orbits toward geostationary altitude are moved by the Moon's and Sun's gravity, which slowly raises or lowers their perigee, so drag alone mostly predicts they never come down (median error 503% on 261 of them). With the Sun's and Moon's tides and Earth's flattening added ([`lunisolar.py`](src/lunisolar.py), [derivation](docs/derivation.md#9-the-moon-the-sun-and-earths-flattening)), the median error is **28%**, as good as for ordinary orbits, and 97% get an answer instead of 66% (experiment 025).
+**Transfer orbits.** Rocket bodies left in stretched orbits toward geostationary altitude are moved by the Moon's and Sun's gravity, which slowly raises or lowers their perigee, so drag alone mostly predicts they never come down (median error 503% on 261 of them). With the Sun's and Moon's tides and Earth's flattening added ([`lunisolar.py`](src/lunisolar.py), [derivation](docs/derivation.md#9-the-moon-the-sun-and-earths-flattening)), the median error is **28%**, as good as for ordinary orbits, and 97% get an answer instead of 66% (experiment 025). Part 1 now uses this for every transfer orbit.
 
 ![Lifetime predicted vs. actual](results/lifetime_predicted_vs_actual.png)
 
@@ -162,9 +162,10 @@ python src/compare_official.py --fresh
 python src/forecast_ranges.py         # the physics ranges, used by the lookup and the live forecasts
 
 python src/download_early_orbits.py   # Part 1: about an hour
-python src/lifetime_model.py          # under a minute
+python src/lifetime_model.py          # drag only for now: under a minute
+python src/download_transfer_orbits.py # the angles of the transfer orbits
+python src/lifetime_model.py          # again, with the Sun and Moon for transfer orbits: about 10 minutes
 python src/train_lifetime_model.py
-python src/download_transfer_orbits.py
 python src/experiments.py transfer_orbits
 ```
 

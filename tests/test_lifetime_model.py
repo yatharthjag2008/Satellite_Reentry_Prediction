@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from lifetime_model import MAX_MONTHS, error_by_band, months_from, object_groups, typical_ap
+from lifetime_model import MAX_MONTHS, error_by_band, months_from, object_groups, typical_ap, uses_lunisolar
 
 
 def test_months_from_pads_a_short_series_with_its_last_value():
@@ -24,6 +24,14 @@ def test_object_groups_split_by_type_and_orbit_shape():
     assert groups["rocket bodies, transfer orbits"].tolist() == [False, True, False, False]
     assert groups["satellites (not Starlink), near-circular"].tolist() == [False, False, True, False]
     assert groups["Starlink"].tolist() == [False, False, False, True]
+
+
+
+def test_only_transfer_orbits_with_known_angles_get_the_sun_and_moon():
+    table = pd.DataFrame({"APOAPSIS": [600.0, 35000.0, 35000.0], "RA_OF_ASC_NODE": [10.0, 20.0, np.nan],
+                          "ARG_OF_PERICENTER": [30.0, 40.0, 50.0]})
+    assert uses_lunisolar(table).tolist() == [False, True, False]
+    assert uses_lunisolar(table.drop(columns="RA_OF_ASC_NODE")).tolist() == [False, False, False]
 
 
 def test_error_by_band_counts_missing_predictions_as_thirty_years():

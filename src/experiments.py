@@ -399,12 +399,11 @@ def transfer_orbits(max_step=1.0):
     """
     import time
 
-    from download_transfer_orbits import OUT_FILE as TRANSFER_FILE
-    from lifetime_model import MAX_YEARS, OUT_FILE as LIFETIME_FILE, error_by_band, weather_paths
+    from lifetime_model import ANGLES, MAX_YEARS, OUT_FILE as LIFETIME_FILE, TRANSFER_FILE, error_by_band, simulate, weather_paths
     from lunisolar import orbit_vectors, propagate_lunisolar
 
-    table = pd.read_parquet(LIFETIME_FILE)
-    angles = pd.read_parquet(TRANSFER_FILE)[["NORAD_CAT_ID", "EPOCH", "RA_OF_ASC_NODE", "ARG_OF_PERICENTER"]]
+    table = pd.read_parquet(LIFETIME_FILE).drop(columns=ANGLES, errors="ignore")
+    angles = pd.read_parquet(TRANSFER_FILE)[["NORAD_CAT_ID", "EPOCH"] + ANGLES]
     table = table.merge(angles, on=["NORAD_CAT_ID", "EPOCH"])
     table = table[table["B_fit"] > 0].reset_index(drop=True)
     print(f"{len(table)} transfer orbits with a fitted B ({(table['OBJECT_TYPE'] == 'R/B').sum()} rocket bodies)")
@@ -420,7 +419,8 @@ def transfer_orbits(max_step=1.0):
                                  table["ARG_OF_PERICENTER"])
     jd0 = pd.DatetimeIndex(table["EPOCH"]).to_julian_date().to_numpy()
     args = (table["a_km"].to_numpy(), e_vec, j_vec, table["B_fit"].to_numpy(), density, jd0)
-    preds = {"drag only (Part 1)": table["solar-cycle forecast"].to_numpy()}
+    # Part 1 itself now uses the Sun and Moon for these orbits, so drag only is simulated here.
+    preds = {"drag only": simulate(table.drop(columns=ANGLES), flux, ap, atm)}
     for name, forces in [("drag + J2", dict(sun=False, moon=False)), ("drag + J2 + Sun + Moon", {})]:
         start = time.time()
         preds[name] = propagate_lunisolar(*args, max_days=MAX_YEARS * 365.25, max_step=max_step, **forces)

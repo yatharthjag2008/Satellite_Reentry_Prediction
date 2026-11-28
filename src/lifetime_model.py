@@ -5,12 +5,15 @@ For every satellite and rocket body launched since 2000 that has reentered:
 2. simulate forward from its orbit on about day 40 until it reenters, under three
    assumptions about the Sun: today's flux held fixed, the solar-cycle forecast
    (solar_cycle.py), and the flux that actually happened (an upper bound on what
-   a perfect forecast could do)
+   a perfect forecast could do). Transfer orbits (apogee above TRANSFER_APOGEE)
+   also feel the Moon's and Sun's gravity and Earth's flattening (lunisolar.py,
+   EXPERIMENTS.md 025), once download_transfer_orbits.py has fetched their angles.
 
 Saves one row per object to data/spacetrack/lifetime_predictions.parquet and
 prints the median error by lifetime and object type.
 
-Run download_early_orbits.py first.
+Run download_early_orbits.py first. The first run saves the table that
+download_transfer_orbits.py needs; run this again after it.
 
     python src/lifetime_model.py
 """
@@ -23,11 +26,14 @@ import pandas as pd
 from atmosphere import MsisAtmosphere
 from build_reentry_dataset import DATA_DIR, R_EARTH, add_space_weather
 from download_early_orbits import OUT_FILE as EARLY_FILE
+from lunisolar import orbit_vectors, propagate_lunisolar
 from orbit_decay import propagate
 from physics_model import fit_drag_parameter, prepare, unit_decay_rate
 from solar_cycle import forecast_monthly
 
 OUT_FILE = DATA_DIR / "spacetrack" / "lifetime_predictions.parquet"
+TRANSFER_FILE = DATA_DIR / "spacetrack" / "transfer_orbits.parquet"  # from download_transfer_orbits.py
+ANGLES = ["RA_OF_ASC_NODE", "ARG_OF_PERICENTER"]
 FIT_FROM, FIT_TO = 10, 40  # days after launch: deployment and early maneuvers are mostly over by day 10
 MAX_YEARS = 30
 MAX_MONTHS = MAX_YEARS * 12 + 2
@@ -55,7 +61,11 @@ def early_table():
     last = df.groupby("NORAD_CAT_ID").tail(1).reset_index(drop=True)
     last["days_left"] = (last["DECAY_DATE"] + pd.Timedelta(hours=12) - last["EPOCH"]).dt.total_seconds() / 86400
     last["is_starlink"] = last["OBJECT_NAME"].str.startswith("STARLINK", na=False).astype(int)
-    return last[last["days_left"] > 0].reset_index(drop=True)
+    last = last[last["days_left"] > 0].reset_index(drop=True)
+    if TRANSFER_FILE.exists():  # the orientation of each transfer orbit, for lunisolar.py
+        angles = pd.read_parquet(TRANSFER_FILE, columns=["NORAD_CAT_ID", "EPOCH"] + ANGLES)
+        last = last.merge(angles.drop_duplicates(["NORAD_CAT_ID", "EPOCH"]), on=["NORAD_CAT_ID", "EPOCH"], how="left")
+    return last
 
 
 def monthly_weather():
@@ -91,18 +101,40 @@ def weather_paths(table):
             "actual flux (perfect forecast)": (actual, actual_ap)}
 
 
+def uses_lunisolar(table):
+    """True for transfer orbits whose orientation is known: those get the Sun's and Moon's gravity too."""
+    if not set(ANGLES) <= set(table.columns):
+        return np.zeros(len(table), bool)
+    return ((table["APOAPSIS"] > TRANSFER_APOGEE) & table[ANGLES].notna().all(axis=1)).to_numpy()
+
+
 def simulate(table, flux, ap, atm):
-    """Days until reentry under a month-by-month flux and Ap path for each object."""
+    """Days until reentry under a month-by-month flux and Ap path for each object.
+
+    Drag only, except transfer orbits with known angles, which also get J2 and the
+    Moon's and Sun's tides (EXPERIMENTS.md 025: 503% to 28% median error).
+    """
     def density(h, idx, t):
         month = np.clip((t / 30.44).astype(int), 0, flux.shape[1] - 1)
         return atm.density(h, flux[idx[:, None], month], ap[idx[:, None], month])
 
-    ok = (table["B_fit"] > 0).to_numpy()
+    B = table["B_fit"].to_numpy()
+    lunisolar = uses_lunisolar(table) & (B > 0)
     days = np.full(len(table), np.nan)
-    rows = np.flatnonzero(ok)
-    days[rows] = propagate(table["a_km"].to_numpy()[rows], table["eccentricity"].to_numpy()[rows],
-                           table["B_fit"].to_numpy()[rows],
-                           lambda h, idx, t: density(h, rows[idx], t), max_days=MAX_YEARS * 365.25)
+    rows = np.flatnonzero((B > 0) & ~lunisolar)
+    if len(rows):
+        days[rows] = propagate(table["a_km"].to_numpy()[rows], table["eccentricity"].to_numpy()[rows], B[rows],
+                               lambda h, idx, t: density(h, rows[idx], t), max_days=MAX_YEARS * 365.25)
+    if lunisolar.any():
+        sub = table[lunisolar]
+        ls_rows = np.flatnonzero(lunisolar)
+        e_vec, j_vec = orbit_vectors(sub["eccentricity"], sub["INCLINATION"], sub["RA_OF_ASC_NODE"],
+                                     sub["ARG_OF_PERICENTER"])
+        epochs = pd.DatetimeIndex(sub["EPOCH"])
+        jd0 = (epochs.tz_localize(None) if epochs.tz is not None else epochs).to_julian_date().to_numpy()
+        days[ls_rows] = propagate_lunisolar(sub["a_km"].to_numpy(), e_vec, j_vec, B[ls_rows],
+                                            lambda h, idx, t: density(h, ls_rows[idx], t), jd0,
+                                            max_days=MAX_YEARS * 365.25)
     return days
 
 
@@ -133,7 +165,8 @@ def error_by_band(table, predictions):
 def main():
     start = time.time()
     table = early_table()
-    print(f"{len(table):,} objects; B fitted for {(table['B_fit'] > 0).mean():.0%}  [{time.time() - start:.0f} s]")
+    print(f"{len(table):,} objects; B fitted for {(table['B_fit'] > 0).mean():.0%}; "
+          f"{uses_lunisolar(table).sum()} transfer orbits with the Sun and Moon  [{time.time() - start:.0f} s]")
     atm = MsisAtmosphere()
     predictions = {}
     for name, (flux, ap) in weather_paths(table).items():

@@ -13,13 +13,12 @@ Saved to the git-ignored data/spacetrack/transfer_orbits.parquet. About 15 minut
 
 import pandas as pd
 
-from build_reentry_dataset import DATA_DIR
 from download_early_orbits import batches
 from download_history import FIELDS, fetch
-from lifetime_model import OUT_FILE as LIFETIME_FILE, TRANSFER_APOGEE
+from lifetime_model import OUT_FILE as LIFETIME_FILE, TRANSFER_APOGEE, TRANSFER_FILE
 from spacetrack import SpaceTrack
 
-OUT_FILE = DATA_DIR / "spacetrack" / "transfer_orbits.parquet"
+OUT_FILE = TRANSFER_FILE
 ANGLE_FIELDS = FIELDS + ",RA_OF_ASC_NODE,ARG_OF_PERICENTER,MEAN_ANOMALY"
 
 
