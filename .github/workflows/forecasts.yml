@@ -60,9 +60,9 @@ jobs:
           key: live-orbits-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: live-orbits-
 
-      # A push only reruns the forecasts on the orbits collected so far: CelesTrak
-      # refuses the same download twice within 2 hours, and the schedule fetches anyway.
-      - run: python src/live_forecasts.py ${{ github.event_name == 'push' && '--no-download' || '' }}
+      # CelesTrak refuses the same download twice within 2 hours, so a run that soon
+      # after the last download (say, from a push) forecasts from the orbits collected so far.
+      - run: python src/live_forecasts.py
 
       - name: Save the collected orbits
         if: always() && hashFiles('data/live/orbits.parquet') != ''

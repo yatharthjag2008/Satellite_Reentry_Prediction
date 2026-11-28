@@ -4,6 +4,7 @@ import pytest
 from scipy.integrate import solve_ivp
 
 from atmosphere import MsisAtmosphere
+import live_forecasts
 from live_forecasts import (ORBIT_COLUMNS, add_to_log, fit_label, forecast_all, merge_orbits, ranges, scored_forecasts,
                             scores, to_orbits)
 from orbit_decay import MU, R_EARTH, circular_decay_rate
@@ -34,6 +35,20 @@ def decaying(norad, B, h_start, days, atm, end=25.0, every=0.25):
     sol = solve_ivp(lambda _, a: circular_decay_rate(a, B, density), (0, t[-1]), [R_EARTH + h_start], t_eval=t,
                     rtol=1e-9, atol=1e-9)
     return orbits(norad, sol.y[0], end - days + t)
+
+
+def test_collect_waits_two_hours_between_downloads(tmp_path, monkeypatch):
+    monkeypatch.setattr(live_forecasts, "LIVE_DIR", tmp_path)
+    monkeypatch.setattr(live_forecasts, "STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(live_forecasts, "ORBITS_FILE", tmp_path / "orbits.parquet")
+    calls = []
+    monkeypatch.setattr(live_forecasts, "fetch_orbits", lambda full: calls.append(full) or ([orbits(1, [6800.0], [0.0])], 0))
+    monkeypatch.setattr(live_forecasts, "download", lambda url, params=None: "x")
+    now = START + pd.Timedelta(days=1)
+    live_forecasts.collect(now)
+    live_forecasts.collect(now + pd.Timedelta(hours=1))   # too soon: nothing downloaded
+    live_forecasts.collect(now + pd.Timedelta(hours=3))   # the decaying group only
+    assert calls == [True, False]
 
 
 def test_to_orbits_converts_celestrak_rows():

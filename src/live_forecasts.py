@@ -1,8 +1,10 @@
 """Live reentry forecasts for the website, from orbits collected from CelesTrak.
 
-GitHub Actions runs this every 6 hours (.github/workflows/forecasts.yml):
+GitHub Actions runs this every 6 hours (.github/workflows/forecasts.yml), and
+when the forecasting code changes:
 
-1. collect: CelesTrak's decaying objects every run and, once a day, the larger
+1. collect: CelesTrak's decaying objects every run (unless the last download was
+   under 2 hours ago, which CelesTrak refuses) and, once a day, the larger
    groups below MAX_PERIGEE_KM, the satellite catalog and the space weather. New
    orbits are added to data/live/orbits.parquet, which keeps HISTORY_DAYS.
 2. forecast: the physics model for every object still tracked, as the lookup
@@ -56,6 +58,7 @@ OUT_DIR = ROOT / "forecast-data"
 ORBIT_COLUMNS = FIELDS.split(",") + ["RA_OF_ASC_NODE", "ARG_OF_PERICENTER", "MEAN_ANOMALY"]
 HISTORY_DAYS = 45
 FULL_EVERY = pd.Timedelta(hours=20)  # the large groups, catalog and weather: about once a day
+MIN_DOWNLOAD_GAP = pd.Timedelta(hours=2)  # CelesTrak refuses a repeat download sooner than this
 MAX_PERIGEE_KM = 500   # from the large groups, keep objects low enough to come down within a few years
 MAX_ORBIT_AGE = 3.0    # days: no newer orbit than this means it has reentered or isn't tracked
 MAX_FORECAST_DAYS = 365.0
@@ -120,6 +123,9 @@ def collect(now):
     """Add new CelesTrak orbits to the history; refresh the catalog and weather about once a day."""
     LIVE_DIR.mkdir(parents=True, exist_ok=True)
     state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
+    if "last_download" in state and now - pd.Timestamp(state["last_download"]) < MIN_DOWNLOAD_GAP:
+        log(f"last download at {state['last_download']}, under 2 hours ago: using the orbits collected so far")
+        return
     last_full = pd.Timestamp(state["last_full"]) if "last_full" in state else None
     full = last_full is None or now - last_full >= FULL_EVERY
 
@@ -143,6 +149,7 @@ def collect(now):
                 failed += 1
         if not failed:  # otherwise try the large groups again next run
             state["last_full"] = now.isoformat()
+    state["last_download"] = now.isoformat()
     STATE_FILE.write_text(json.dumps(state))
 
 
