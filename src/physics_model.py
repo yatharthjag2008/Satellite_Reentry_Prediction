@@ -7,6 +7,9 @@ For each object and day in the training table:
 
 A fitted B above MAX_B is too large to be drag (gravity or thrusters are moving
 the orbit, EXPERIMENTS.md 021), so it gets no prediction, like a negative one.
+Transfer orbits (apogee above 5,000 km) are simulated with the Moon's and Sun's
+gravity too (lunisolar.py, EXPERIMENTS.md 026), once download_final_year_angles.py
+has fetched their angles: run this, then that, then this again.
 
 Predictions are made for one day a week per object (simulating all 3.7 million
 rows would take hours) and saved to data/spacetrack/physics_predictions.parquet.
@@ -111,6 +114,24 @@ def forecast(df, B, atm, max_days=MAX_DAYS):
     return days
 
 
+def with_sun_and_moon(weekly, atm):
+    """weekly, with transfer orbits that have known angles re-simulated with the Moon's and Sun's gravity."""
+    from lifetime_model import ANGLES, uses_lunisolar
+    from lunisolar import days_from_rows
+
+    angles_file = DATA_FILE.parent / "final_year_angles.parquet"  # download_final_year_angles.py
+    if not angles_file.exists():
+        return weekly
+    weekly = weekly.merge(pd.read_parquet(angles_file), on=["NORAD_CAT_ID", "EPOCH"], how="left")
+    rows = uses_lunisolar(weekly) & plausible(weekly["B_fit"].to_numpy())
+    sub = weekly[rows]
+    profile = atm.profile(sub["f107_81d"].to_numpy(), sub["ap_7d"].to_numpy())
+    weekly.loc[rows, "physics_days"] = days_from_rows(sub, sub["B_fit"].to_numpy(),
+                                                      lambda h, idx, t: profile(h, idx), max_days=MAX_DAYS)
+    print(f"re-simulated {rows.sum():,} transfer orbits with the Sun and Moon")
+    return weekly.drop(columns=ANGLES)
+
+
 def main():
     start = time.time()
     atm = MsisAtmosphere()
@@ -128,6 +149,8 @@ def main():
     weekly = df[df.groupby("NORAD_CAT_ID").cumcount() % EVERY == 0].copy()
     weekly["physics_days"] = forecast(weekly, weekly["B_fit"].to_numpy(), atm)
     print(f"simulated {len(weekly):,} orbits  [{time.time() - start:.0f} s]")
+    weekly = with_sun_and_moon(weekly.reset_index(drop=True), atm)
+    print(f"  [{time.time() - start:.0f} s]")
 
     cols = ["NORAD_CAT_ID", "EPOCH", "B_fit", "n_fit", "physics_days"] + [f"B_fit_{w}d" for w in OTHER_WINDOWS]
     weekly[cols].to_parquet(OUT_FILE, index=False)

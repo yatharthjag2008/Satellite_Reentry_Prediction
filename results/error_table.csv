@@ -4,5 +4,5 @@ physics,22%,17%,21%,25%,24%,52%
 linear regression,164%,38%,27%,37%,36%,35%
 XGBoost,27%,15%,19%,19%,19%,63%
 Gaussian process,24%,18%,25%,23%,23%,54%
-physics + ML hybrid,19%,15%,18%,16%,16%,68%
+physics + ML hybrid,19%,16%,17%,16%,16%,68%
 (test objects),"3,800 obj","4,377 obj","4,502 obj","4,581 obj",,

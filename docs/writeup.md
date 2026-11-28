@@ -58,11 +58,11 @@ Median error relative to the true time left, on the 4,897 test objects:
 | Physics only | 22% | 17% | 21% | 25% | 24% | 52% |
 | XGBoost (tuned) | 27% | 15% | 19% | 19% | 19% | 63% |
 | Gaussian process | 24% | 18% | 25% | 23% | 23% | 54% |
-| **Physics + ML hybrid** | **19%** | **15%** | **18%** | **16%** | **16%** | **68%** |
+| **Physics + ML hybrid** | **19%** | 16% | **17%** | **16%** | **16%** | **68%** |
 
-The hybrid is the most accurate model for every object type: 15% for debris and rocket bodies, 11% for ordinary satellites and 28% for Starlink, whose reentries the operator chooses. The physics alone, with one fitted number per object and no training, comes close to XGBoost.
+The hybrid is the most accurate model for every object type: 14% for debris and rocket bodies, 11% for ordinary satellites and 28% for Starlink, whose reentries the operator chooses. The physics alone, with one fitted number per object and no training, comes close to XGBoost.
 
-**Across the solar cycle.** Retrained and tested year by year since 2005, the hybrid is best or tied in 20 of 22 years (median 22%, against 24% for XGBoost and 27% for the physics). The physics alone struggles exactly when the Sun is waking from a minimum (2010–2011, 2021), because holding today's low solar flux fixed underestimates future drag; the hybrid learns this from earlier cycles.
+**Across the solar cycle.** Retrained and tested year by year since 2005, the hybrid is best or tied in 20 of 22 years (median 21%, against 24% for XGBoost and 26% for the physics). The physics alone struggles exactly when the Sun is waking from a minimum (2010–2011, 2021), because holding today's low solar flux fixed underestimates future drag; the hybrid learns this from earlier cycles.
 
 **Ranges.** The rolling 90% ranges contain the truth 89% of the time overall, 90% for debris and rocket bodies and 87% for Starlink.
 
@@ -83,7 +83,7 @@ With fresh orbits and the drag measured over only the last eight days, which cap
 
 From only an object's orbits 10–40 days after launch, the same physics with a forecast of the solar cycle predicts its whole lifetime, often years ahead. On 2,951 satellites and rocket bodies launched since 2000 whose fitted drag parameter can be drag, including the Moon's and Sun's gravity for transfer orbits (below), the median error is 26% (19% for lifetimes of 3–10 years), against 68% with today's solar flux held fixed. Tested on a later period of launches, the physics held up while ML models trained on earlier launches did not (experiment 019).
 
-**Transfer orbits.** Rocket bodies left in stretched orbits toward geostationary altitude reach tens of thousands of kilometers, where the Moon's and Sun's gravity slowly move the perigee, and drag alone predicts most of them to stay up for decades (median error 503%). Adding the orbit-averaged tides of the Sun and Moon at their actual positions, and Earth's flattening, in the vector form of Milankovitch's equations, brings the median error on 261 transfer orbits down to **28%**, the same as for ordinary orbits, with 97% of them predicted to fall within 30 years instead of 66% (experiment 025). Part 1 now simulates every transfer orbit this way, and the hybrid built on it improves from 71% to 37% on them. The same holds in an object's final year: on 1,943 weekly test rows of transfer orbits, the median error drops from 39% to 10%, and every row gets an answer instead of 80% (experiment 026), so the lookup and the live forecasts use it too.
+**Transfer orbits.** Rocket bodies left in stretched orbits toward geostationary altitude reach tens of thousands of kilometers, where the Moon's and Sun's gravity slowly move the perigee, and drag alone predicts most of them to stay up for decades (median error 503%). Adding the orbit-averaged tides of the Sun and Moon at their actual positions, and Earth's flattening, in the vector form of Milankovitch's equations, brings the median error on 261 transfer orbits down to **28%**, the same as for ordinary orbits, with 97% of them predicted to fall within 30 years instead of 66% (experiment 025). Part 1 now simulates every transfer orbit this way, and the hybrid built on it improves from 71% to 37% on them. The same holds in an object's final year: on 1,943 weekly test rows of transfer orbits, the median error drops from 39% to 10%, and every row gets an answer instead of 80% (experiment 026), so the main physics, the hybrid trained on it (16% to 12% on transfer orbits), the lookup and the live forecasts use it too.
 
 ## 5. Live forecasts
 

@@ -71,13 +71,13 @@
           <tr><th scope="row">Physics only <span class="sub">drag simulation, no training</span></th><td>22%</td><td>17%</td><td>21%</td><td>25%</td><td>24%</td><td>52%</td></tr>
           <tr><th scope="row">XGBoost <span class="sub">tuned</span></th><td>27%</td><td class="best">15%</td><td>19%</td><td>19%</td><td>19%</td><td>63%</td></tr>
           <tr><th scope="row">Gaussian process</th><td>24%</td><td>18%</td><td>25%</td><td>23%</td><td>23%</td><td>54%</td></tr>
-          <tr class="highlight"><th scope="row">Physics + ML hybrid</th><td class="best">19%</td><td class="best">15%</td><td class="best">18%</td><td class="best">16%</td><td class="best">16%</td><td class="best">68%</td></tr>
+          <tr class="highlight"><th scope="row">Physics + ML hybrid</th><td class="best">19%</td><td>16%</td><td class="best">17%</td><td class="best">16%</td><td class="best">16%</td><td class="best">68%</td></tr>
         </tbody>
       </table>
     </div>
 
     <ul class="findings">
-      <li><strong>The hybrid is the most accurate model</strong> overall and for every object type: 15% for debris and rocket bodies, 11% for ordinary satellites, 28% for Starlink, whose reentries the operator chooses.</li>
+      <li><strong>The hybrid is the most accurate model</strong> overall and for every object type: 14% for debris and rocket bodies, 11% for ordinary satellites, 28% for Starlink, whose reentries the operator chooses.</li>
       <li><strong>The physics alone is almost as good as XGBoost.</strong> It uses one fitted number per object and no training, and it beats XGBoost in the final week.</li>
       <li><strong>It holds across the solar cycle.</strong> Retrained and tested year by year since 2005, the hybrid is best or tied in 20 of 22 years.</li>
       <li><strong>Its ranges are honest.</strong> Conformal prediction gives a 90% range around each prediction; it contains the truth 89% of the time.</li>

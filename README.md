@@ -18,15 +18,15 @@ On objects that reentered from 2024 onward, which no model saw during training (
 | Physics only (drag simulation, no training) | 22% | 17% | 21% | 25% | 24% | 52% |
 | XGBoost (tuned) | 27% | **15%** | 19% | 19% | 19% | 63% |
 | Gaussian process | 24% | 18% | 25% | 23% | 23% | 54% |
-| **Physics + ML hybrid** | **19%** | **15%** | **18%** | **16%** | **16%** | **68%** |
+| **Physics + ML hybrid** | **19%** | 16% | **17%** | **16%** | **16%** | **68%** |
 
 ![Error by time left until reentry](results/error_by_horizon.png)
 
 ![Predicted vs. actual days until reentry](results/predicted_vs_actual.png)
 
-- **The hybrid is the most accurate model** overall and for every object type: 15% for debris and rocket bodies, 11% for ordinary satellites, 28% for Starlink (whose reentries are chosen by the operator).
+- **The hybrid is the most accurate model** overall and for every object type: 14% for debris and rocket bodies, 11% for ordinary satellites, 28% for Starlink (whose reentries are chosen by the operator). On transfer orbits its physics includes the Moon's and Sun's gravity, which takes it from 16% to 12% there (experiment 026).
 - **The physics alone, with one fitted number per object and no training, is almost as good as XGBoost**, and better than it in the final week.
-- **It holds across the solar cycle.** Retrained and tested year by year since 2005, the hybrid is best or tied in 20 of 22 years (median 22%, against 24% for XGBoost and 27% for physics). See [`results/backtest_by_year.png`](results/backtest_by_year.png).
+- **It holds across the solar cycle.** Retrained and tested year by year since 2005, the hybrid is best or tied in 20 of 22 years (median 21%, against 24% for XGBoost and 26% for physics). See [`results/backtest_by_year.png`](results/backtest_by_year.png).
 - **Calibrated uncertainty.** Conformal prediction gives a 90% range around each prediction, recalibrated monthly on recent reentries; it contains the truth 89% of the time. In the final days, ranges calibrated on every orbit held for 87–95% of later reentries (experiment 023).
 - **Against the official US Space Force predictions:** given equally fresh orbits, the physics model is 28% more accurate than the official forecasts from 4+ days out, and within 1.2× of them 2–4 days out; in the final day the official forecasts, with dense radar tracking, are far better. See [below](#against-the-official-predictions).
 - **The physics knows when it's wrong.** A fitted drag parameter above 1 m²/kg is more than any solid object has, so the orbit is being moved by something else (gravity on a stretched orbit, or thrusters); the physics then gives no answer and the hybrid takes over (experiments 021–022).
@@ -152,6 +152,8 @@ python src/download_history.py        # about a day, because of Space-Track's ra
 python src/build_reentry_dataset.py   # under a minute
 python src/atmosphere.py              # NRLMSIS density table, about 4 minutes
 python src/physics_model.py           # about 9 minutes
+python src/download_final_year_angles.py  # angles of the transfer orbits: about 20 minutes
+python src/physics_model.py           # again, with the Sun and Moon for transfer orbits: about 16 minutes
 python src/train_reentry_model.py     # about 3 minutes
 python src/uncertainty.py             # the hybrid's ranges, used by the lookup
 python src/backtest.py                # year by year since 2005
@@ -159,7 +161,6 @@ python src/backtest.py                # year by year since 2005
 python src/download_tip.py            # official predictions
 python src/download_final_orbits.py   # every orbit of the final 40 days
 python src/compare_official.py --fresh
-python src/download_final_year_angles.py  # angles of the final-year transfer orbits: about 20 minutes
 python src/experiments.py final_year_transfer
 python src/forecast_ranges.py         # the physics ranges, used by the lookup and the live forecasts
 

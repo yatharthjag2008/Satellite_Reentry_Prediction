@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 import pandas as pd
 
 from predict_reentry import _duration, describe
@@ -64,9 +63,12 @@ def test_describe_mentions_the_solar_cycle_for_long_predictions():
 
 
 def test_describe_mentions_the_sun_and_moon_for_transfer_orbits():
-    text = "\n".join(describe(result(apogee=30000.0, physics_days=900.0, hybrid_days=None, range=None,
-                                      solar_cycle=True, lunisolar=True)))
-    assert "Moon's and Sun's gravity" in text and "No hybrid model" in text and "11-year" not in text
+    text = "\n".join(describe(result(apogee=30000.0, physics_days=120.0, hybrid_days=110.0, range=(80.0, 160.0),
+                                      lunisolar=True)))
+    assert "Moon's and Sun's gravity" in text and "Hybrid model" in text and "11-year" not in text
+    far = "\n".join(describe(result(apogee=30000.0, physics_days=900.0, hybrid_days=None, range=None,
+                                    solar_cycle=True, lunisolar=True)))
+    assert "Moon's and Sun's gravity" in far and "11-year" in far and "beyond what the hybrid" in far
 
 
 def test_transfer_orbits_are_recognised_only_with_their_angles():
@@ -94,17 +96,3 @@ def test_describe_says_which_assumptions_put_it_beyond_thirty_years():
     assert "at today's solar activity" in text()
     assert "11-year cycle" in text(solar_cycle=True) and "today's" not in text(solar_cycle=True)
     assert "Moon's and Sun's gravity" in text(solar_cycle=True, lunisolar=True)
-
-
-def test_transfer_range_takes_the_wider_widths(tmp_path, monkeypatch):
-    import json
-    import predict_reentry
-    path = tmp_path / "widths.json"
-    path.write_text(json.dumps({"bands": [0, 3, 10, 30, 100, 1e9], "widths": {
-        "30": [[0.1, 0.1, 0.1, 0.1, 0.3]] * 3, "transfer": [[0.2, 0.2, 0.2, 0.2, 0.2]] * 3}}))
-    monkeypatch.setattr(predict_reentry, "RANGES_FILE", path)
-    row = pd.DataFrame({"OBJECT_TYPE": ["R/B"], "is_starlink": [0]})
-    low, high = predict_reentry.transfer_range(50.0, row)
-    assert high / 50.0 == pytest.approx(10 ** 0.2) and low * high == pytest.approx(2500.0)
-    assert predict_reentry.transfer_range(200.0, row)[1] / 200.0 == pytest.approx(10 ** 0.3)
-    assert predict_reentry.transfer_range(400.0, row) is None  # beyond a year

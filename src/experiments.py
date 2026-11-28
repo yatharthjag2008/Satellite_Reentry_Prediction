@@ -448,7 +448,7 @@ def final_year_transfer(max_step=1.0):
 
     from download_final_year_angles import OUT_FILE as ANGLES_FILE
     from lunisolar import days_from_rows
-    from physics_model import MAX_DAYS, plausible
+    from physics_model import MAX_DAYS, forecast, plausible
 
     df = pd.concat(load(verbose=False)).merge(pd.read_parquet(ANGLES_FILE), on=["NORAD_CAT_ID", "EPOCH"])
     print(f"{len(df):,} weekly rows on {df['NORAD_CAT_ID'].nunique():,} transfer orbits with their angles")
@@ -459,24 +459,26 @@ def final_year_transfer(max_step=1.0):
     atm = MsisAtmosphere()
     profile = atm.profile(df["f107_81d"].to_numpy(), df["ap_7d"].to_numpy())
     B = df["B_fit"].to_numpy()
+    # physics_model.py now saves the Sun-and-Moon answer for these rows, so drag only is simulated here.
+    drag = forecast(df, B, atm)
 
-    # The same integrator with every force but drag off should repeat physics_model's answers.
+    # The same integrator with every force but drag off should repeat physics_model's drag answers.
     check = np.arange(0, len(df), max(1, len(df) // 300))
     plain = days_from_rows(df.iloc[check], B[check], lambda h, idx, t: profile(h, check[idx]), max_days=MAX_DAYS,
                            max_step=max_step, sun=False, moon=False, j2=False)
-    both = np.isfinite(plain) & np.isfinite(df["physics_days"].to_numpy()[check])
+    both = np.isfinite(plain) & np.isfinite(drag[check])
     print(f"drag only, two integrators: median difference "
-          f"{np.median(np.abs(plain[both] / df['physics_days'].to_numpy()[check][both] - 1)):.2%} on {both.sum()} rows")
+          f"{np.median(np.abs(plain[both] / drag[check][both] - 1)):.2%} on {both.sum()} rows")
 
     start = time.time()
-    preds = {"drag only (now)": df["physics_days"].to_numpy(),
+    preds = {"drag only": drag,
              "drag + J2 + Sun + Moon": days_from_rows(df, B, lambda h, idx, t: profile(h, idx), max_days=MAX_DAYS,
                                                       max_step=max_step)}
     print(f"simulated in {time.time() - start:.0f} s")
 
     truth = df["days_left"].to_numpy()
     for name, rows in [("all years", np.ones(len(df), bool)), ("test (reentered 2024+)", (df["DECAY_DATE"] >= "2024-01-01").to_numpy())]:
-        answered = np.isfinite(preds["drag only (now)"]) & np.isfinite(preds["drag + J2 + Sun + Moon"]) & rows
+        answered = np.isfinite(preds["drag only"]) & np.isfinite(preds["drag + J2 + Sun + Moon"]) & rows
         print(f"\n{name}: rows where both have an answer ({answered.sum():,})")
         show(scores({k: v[answered] for k, v in preds.items()}, truth[answered]))
         print(f"{name}: every row, no answer counted as {NO_PHYSICS_DAYS} days ({rows.sum():,})")
