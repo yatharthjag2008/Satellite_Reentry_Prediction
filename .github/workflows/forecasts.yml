@@ -15,6 +15,13 @@ on:
     paths:
       - src/live_forecasts.py
       - src/physics_model.py
+      - src/orbit_decay.py
+      - src/atmosphere.py
+      - src/lunisolar.py
+      - src/lifetime_model.py
+      - src/predict_reentry.py
+      - src/build_reentry_dataset.py
+      - src/uncertainty.py
       - src/ground_track.py
       - results/live_forecast_widths.json
       - .github/workflows/forecasts.yml
