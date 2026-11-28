@@ -447,7 +447,7 @@ def final_year_transfer(max_step=1.0):
     import time
 
     from download_final_year_angles import OUT_FILE as ANGLES_FILE
-    from lunisolar import orbit_vectors, propagate_lunisolar
+    from lunisolar import days_from_rows
     from physics_model import MAX_DAYS, plausible
 
     df = pd.concat(load(verbose=False)).merge(pd.read_parquet(ANGLES_FILE), on=["NORAD_CAT_ID", "EPOCH"])
@@ -458,21 +458,20 @@ def final_year_transfer(max_step=1.0):
 
     atm = MsisAtmosphere()
     profile = atm.profile(df["f107_81d"].to_numpy(), df["ap_7d"].to_numpy())
-    e_vec, j_vec = orbit_vectors(df["eccentricity"], df["INCLINATION"], df["RA_OF_ASC_NODE"], df["ARG_OF_PERICENTER"])
-    jd0 = pd.DatetimeIndex(df["EPOCH"]).to_julian_date().to_numpy()
-    args = (df["a_km"].to_numpy(), e_vec, j_vec, df["B_fit"].to_numpy(), lambda h, idx, t: profile(h, idx), jd0)
+    B = df["B_fit"].to_numpy()
 
     # The same integrator with every force but drag off should repeat physics_model's answers.
     check = np.arange(0, len(df), max(1, len(df) // 300))
-    sub = (args[0][check], e_vec[check], j_vec[check], args[3][check], lambda h, idx, t: profile(h, check[idx]), jd0[check])
-    plain = propagate_lunisolar(*sub, max_days=MAX_DAYS, max_step=max_step, sun=False, moon=False, j2=False)
+    plain = days_from_rows(df.iloc[check], B[check], lambda h, idx, t: profile(h, check[idx]), max_days=MAX_DAYS,
+                           max_step=max_step, sun=False, moon=False, j2=False)
     both = np.isfinite(plain) & np.isfinite(df["physics_days"].to_numpy()[check])
     print(f"drag only, two integrators: median difference "
           f"{np.median(np.abs(plain[both] / df['physics_days'].to_numpy()[check][both] - 1)):.2%} on {both.sum()} rows")
 
     start = time.time()
     preds = {"drag only (now)": df["physics_days"].to_numpy(),
-             "drag + J2 + Sun + Moon": propagate_lunisolar(*args, max_days=MAX_DAYS, max_step=max_step)}
+             "drag + J2 + Sun + Moon": days_from_rows(df, B, lambda h, idx, t: profile(h, idx), max_days=MAX_DAYS,
+                                                      max_step=max_step)}
     print(f"simulated in {time.time() - start:.0f} s")
 
     truth = df["days_left"].to_numpy()
