@@ -77,6 +77,21 @@ def short_window_range(days, row):
     return None if width is None else (days / 10 ** width, days * 10 ** width)
 
 
+def transfer_range(days, row):
+    """90% range (low, high) for the Sun-and-Moon physics on a transfer orbit within a year: the wider of the
+    "transfer" and the usual 30-day widths, as the live forecasts use (EXPERIMENTS.md 026)."""
+    if not RANGES_FILE.exists() or not np.isfinite(days) or days > 365:
+        return None
+    saved = json.loads(RANGES_FILE.read_text())
+    group, band = int(group_of(row)[0]), int(np.digitize(days, saved["bands"][1:-1]))
+    found = [saved["widths"][name][group][band] for name in ("transfer", "30") if name in saved["widths"]]
+    found = [w for w in found if w is not None]
+    if not found:
+        return None
+    width = max(found)
+    return days / 10 ** width, days * 10 ** width
+
+
 def conformal_range(days, row):
     """90% range (low, high) from uncertainty.py's calibration, if it has been run."""
     if not CONFORMAL_FILE.exists():
@@ -122,6 +137,7 @@ def predict(st, norad_id):
     if lunisolar:
         # The hybrid learned to correct drag-only physics, so it isn't used on top of this.
         result["solar_cycle"] = True
+        result["range"] = transfer_range(physics, latest)
         return result
     B = latest["B_fit"].iloc[0]
     if (not np.isfinite(physics) or physics > 365) and plausible(B):
@@ -199,7 +215,7 @@ def describe(result):
         lines.append(f"Physics model: about {_duration(physics)} (around {end:{when}})")
     if result.get("lunisolar") and not result.get("short_window"):
         lines.append("(including the Moon's and Sun's gravity, which slowly move the low point of a")
-        lines.append(" stretched orbit like this one; tested to a median error of 28% on lifetimes)")
+        lines.append(" stretched orbit like this one; 10% median error on recent transfer orbits)")
     elif result.get("solar_cycle"):
         lines.append("(with a forecast of the Sun's 11-year cycle; a rough guide this far ahead)")
     if result.get("short_window"):
