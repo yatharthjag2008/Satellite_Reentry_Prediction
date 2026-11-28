@@ -183,7 +183,13 @@ def describe(result):
         lines.append("Physics model: no answer. Over the last month the orbit changed faster than drag can")
         lines.append("explain (thrusters, or the Sun's and Moon's gravity reshaping a stretched orbit).")
     elif not np.isfinite(physics):
-        lines.append(f"Physics model: more than {MAX_PHYSICS_DAYS / 365.25:.0f} years at today's solar activity.")
+        years = f"Physics model: more than {MAX_PHYSICS_DAYS / 365.25:.0f} years"
+        if result.get("lunisolar"):
+            lines.append(f"{years}, with the Moon's and Sun's gravity and a forecast of the Sun's cycle.")
+        elif result.get("solar_cycle"):
+            lines.append(f"{years}, with a forecast of the Sun's 11-year cycle.")
+        else:
+            lines.append(f"{years} at today's solar activity.")
         return lines
     # Within a few days, the time of day matters; further out, the date is enough.
     soonest = physics if np.isfinite(physics) else result["hybrid_days"] or np.inf

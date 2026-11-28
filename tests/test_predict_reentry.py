@@ -85,3 +85,11 @@ def test_describe_explains_a_fit_too_large_to_be_drag():
 def test_describe_says_which_latitudes_it_can_fall_on():
     assert "between 52°S and 52°N" in "\n".join(describe(result(inclination=51.6)))
     assert "Where:" not in "\n".join(describe(result(B=-0.001, physics_days=np.nan, inclination=51.6)))
+
+
+def test_describe_says_which_assumptions_put_it_beyond_thirty_years():
+    def text(**changes):
+        return "\n".join(describe(result(physics_days=np.nan, hybrid_days=None, range=None, **changes)))
+    assert "at today's solar activity" in text()
+    assert "11-year cycle" in text(solar_cycle=True) and "today's" not in text(solar_cycle=True)
+    assert "Moon's and Sun's gravity" in text(solar_cycle=True, lunisolar=True)
