@@ -45,7 +45,7 @@ From only an object's orbits 10–40 days after launch, the physics model with a
 
 Near-circular satellites come out at about 25%, near-circular rocket bodies at about 21% and rocket bodies in transfer orbits at 29%. Tested on launches from a later period (2012–2015), the physics held up (23% for satellites), while ML models trained on earlier launches did not (experiment 019). It doesn't work for Starlink, whose lifetime is set by the operator.
 
-**Transfer orbits.** Rocket bodies left in stretched orbits toward geostationary altitude are moved by the Moon's and Sun's gravity, which slowly raises or lowers their perigee, so drag alone mostly predicts they never come down (median error 503% on 261 of them). With the Sun's and Moon's tides and Earth's flattening added ([`lunisolar.py`](src/lunisolar.py), [derivation](docs/derivation.md#9-the-moon-the-sun-and-earths-flattening)), the median error is **28%**, as good as for ordinary orbits, and 97% get an answer instead of 66% (experiment 025). Part 1 now uses this for every transfer orbit.
+**Transfer orbits.** Rocket bodies left in stretched orbits toward geostationary altitude are moved by the Moon's and Sun's gravity, which slowly raises or lowers their perigee, so drag alone mostly predicts they never come down (median error 503% on 261 of them). With the Sun's and Moon's tides and Earth's flattening added ([`lunisolar.py`](src/lunisolar.py), [derivation](docs/derivation.md#9-the-moon-the-sun-and-earths-flattening)), the median error is **28%**, as good as for ordinary orbits, and 97% get an answer instead of 66% (experiment 025). Part 1 and the lookup tool now use this for every transfer orbit.
 
 ![Lifetime predicted vs. actual](results/lifetime_predicted_vs_actual.png)
 

@@ -7,7 +7,8 @@ Space-Track login in .env (see src/spacetrack.py) and the trained models. The
 prediction uses whichever method tested best for how far away reentry is
 (src/predict_reentry.py): drag measured over the last 8 days within about 10
 days, the physics + ML hybrid with a 90% range out to two years, and the physics
-with a solar-cycle forecast beyond that.
+with a solar-cycle forecast beyond that. Stretched (transfer) orbits get the
+physics with the Moon's and Sun's gravity and a solar-cycle forecast instead.
 Press Enter on an empty line (or type q) to quit.
 
     python src/lookup_satellite.py

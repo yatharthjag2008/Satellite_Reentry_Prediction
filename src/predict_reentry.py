@@ -2,8 +2,10 @@
 
 Downloads the object's last HISTORY_DAYS of orbits from Space-Track and fresh
 space weather from CelesTrak, builds the same features as the training table,
-and runs the physics model and the physics + ML hybrid. Used by
-lookup_satellite.py; can also be run on its own:
+and runs the physics model and the physics + ML hybrid. A transfer orbit
+(apogee above 5,000 km) is simulated with the Moon's and Sun's gravity as well
+(lunisolar.py, EXPERIMENTS.md 025). Used by lookup_satellite.py; can also be run
+on its own:
 
     python src/predict_reentry.py 25544
 """
@@ -33,6 +35,7 @@ MAX_PHYSICS_DAYS = 365.25 * 30
 # Close to reentry, B fitted over the last few days of every orbit is far more accurate (EXPERIMENTS.md 015).
 SHORT_WINDOW = 8
 SHORT_WINDOW_BELOW = 10  # days: switch when the usual prediction is closer than this
+ANGLE_FIELDS = ",RA_OF_ASC_NODE,ARG_OF_PERICENTER"  # where a transfer orbit faces the Sun and Moon
 CONFORMAL_FILE = MODELS_DIR / "conformal_widths.json"
 RANGES_FILE = RESULTS_DIR / "live_forecast_widths.json"  # physics ranges from forecast_ranges.py
 
@@ -50,7 +53,7 @@ def fetch_history(st, norad_id):
     """Every orbit of the object from the last HISTORY_DAYS."""
     start = (pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=HISTORY_DAYS)).strftime("%Y-%m-%d")
     text = st.get(f"query/class/gp_history/NORAD_CAT_ID/{norad_id}/EPOCH/>{start}"
-                  f"/predicates/{FIELDS}/format/csv")
+                  f"/predicates/{FIELDS}{ANGLE_FIELDS}/format/csv")
     history = pd.read_csv(io.StringIO(text), parse_dates=["EPOCH"]) if text.strip() else pd.DataFrame()
     return history.sort_values("EPOCH", ignore_index=True) if len(history) else history
 
@@ -97,12 +100,16 @@ def predict(st, norad_id):
     df["B_fit"], df["n_fit"] = fit_drag_parameter(df, unit_decay_rate(df, atm))
     latest = df.iloc[[-1]].copy()
     physics = forecast(latest, latest["B_fit"].to_numpy(), atm, max_days=MAX_PHYSICS_DAYS)[0]
+    lunisolar = is_transfer_orbit(latest) and plausible(latest["B_fit"].iloc[0])
+    if lunisolar:
+        # The Sun and Moon move a stretched orbit's perigee, which drag alone misses (EXPERIMENTS.md 025).
+        physics = years_ahead(latest, atm)
 
     result = {"epoch": latest["EPOCH"].iloc[0], "perigee": latest["PERIAPSIS"].iloc[0],
               "apogee": latest["APOAPSIS"].iloc[0], "B": latest["B_fit"].iloc[0],
               "inclination": latest["INCLINATION"].iloc[0],
               "perigee_rate": latest["perigee_rate_30d"].iloc[0], "physics_days": physics,
-              "hybrid_days": None, "range": None, "short_window": False,
+              "hybrid_days": None, "range": None, "short_window": False, "lunisolar": lunisolar,
               "is_payload": latest["OBJECT_TYPE"].iloc[0] == "PAY"}
     if np.isfinite(physics) and physics < SHORT_WINDOW_BELOW:
         B_short = fit_drag_parameter(every, unit_decay_rate(every, atm), SHORT_WINDOW)[0][-1]
@@ -111,6 +118,10 @@ def predict(st, norad_id):
             result["short_window"] = True
             if np.isfinite(result["physics_days"]):
                 result["range"] = short_window_range(result["physics_days"], every.iloc[[-1]])
+        return result
+    if lunisolar:
+        # The hybrid learned to correct drag-only physics, so it isn't used on top of this.
+        result["solar_cycle"] = True
         return result
     B = latest["B_fit"].iloc[0]
     if (not np.isfinite(physics) or physics > 365) and plausible(B):
@@ -137,8 +148,17 @@ def predict(st, norad_id):
     return result
 
 
+def is_transfer_orbit(latest):
+    """True if the orbit reaches high enough for the Sun and Moon to matter, and its angles are known."""
+    from lifetime_model import uses_lunisolar
+    return bool(uses_lunisolar(latest)[0])
+
+
 def years_ahead(latest, atm):
-    """Days until reentry under the solar-cycle forecast and typical geomagnetic activity."""
+    """Days until reentry under the solar-cycle forecast and typical geomagnetic activity.
+
+    lifetime_model.simulate adds the Sun and Moon for transfer orbits.
+    """
     from lifetime_model import MAX_MONTHS, monthly_weather, simulate, typical_ap
     from solar_cycle import forecast_monthly
 
@@ -171,7 +191,10 @@ def describe(result):
     if np.isfinite(physics):
         end = result["epoch"] + pd.Timedelta(days=physics)
         lines.append(f"Physics model: about {_duration(physics)} (around {end:{when}})")
-    if result.get("solar_cycle"):
+    if result.get("lunisolar") and not result.get("short_window"):
+        lines.append("(including the Moon's and Sun's gravity, which slowly move the low point of a")
+        lines.append(" stretched orbit like this one; tested to a median error of 28% on lifetimes)")
+    elif result.get("solar_cycle"):
         lines.append("(with a forecast of the Sun's 11-year cycle; a rough guide this far ahead)")
     if result.get("short_window"):
         lines.append(f"(drag measured over the last {SHORT_WINDOW} days of tracking: our most accurate")
@@ -183,6 +206,8 @@ def describe(result):
         if result["range"] is not None:
             lo, hi = (result["epoch"] + pd.Timedelta(days=d) for d in result["range"])
             lines.append(f"90% range:     {lo:{when}} to {hi:{when}}")
+    elif result.get("lunisolar") and not result.get("short_window"):
+        lines.append("No hybrid model here: it learned to correct drag alone, which misses the Moon and Sun.")
     elif np.isfinite(physics) and physics > 2 * 365:
         lines.append("More than about two years away, beyond what the hybrid model was trained on.")
     if result.get("inclination") is not None and (np.isfinite(physics) or result["hybrid_days"] is not None):

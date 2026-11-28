@@ -62,6 +62,20 @@ def test_describe_mentions_the_solar_cycle_for_long_predictions():
     assert "11-year cycle" in text and "7.1 years" in text
 
 
+def test_describe_mentions_the_sun_and_moon_for_transfer_orbits():
+    text = "\n".join(describe(result(apogee=30000.0, physics_days=900.0, hybrid_days=None, range=None,
+                                      solar_cycle=True, lunisolar=True)))
+    assert "Moon's and Sun's gravity" in text and "No hybrid model" in text and "11-year" not in text
+
+
+def test_transfer_orbits_are_recognised_only_with_their_angles():
+    from predict_reentry import is_transfer_orbit
+    row = pd.DataFrame({"APOAPSIS": [30000.0], "RA_OF_ASC_NODE": [10.0], "ARG_OF_PERICENTER": [20.0]})
+    assert is_transfer_orbit(row)
+    assert not is_transfer_orbit(row.assign(APOAPSIS=600.0))
+    assert not is_transfer_orbit(row.drop(columns="ARG_OF_PERICENTER"))
+
+
 def test_describe_explains_a_fit_too_large_to_be_drag():
     text = "\n".join(describe(result(B=5.0, physics_days=np.nan, hybrid_days=120.0, range=(80.0, 180.0))))
     assert "faster than drag can" in text and "30 years" not in text
