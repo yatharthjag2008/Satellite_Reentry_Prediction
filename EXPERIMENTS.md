@@ -29,6 +29,7 @@ Numbered experiments on predicting reentry. Each entry records what changed, wha
 | [023](#023-90-ranges-for-the-final-days) | Can the final-days physics get honest ranges? | Yes: 87–95% coverage on later reentries |
 | [024](#024-would-a-storm-forecast-help-in-the-final-week) | Would a storm forecast help in the final week? | Barely: even a perfect one saves about an hour, only during storms |
 | [025](#025-part-1-the-moon-and-the-sun-on-transfer-orbits) | Do the Moon's and Sun's gravity fix transfer orbits? | Yes: 503% → 28% median error on 261 transfer orbits |
+| [026](#026-the-moon-and-the-sun-on-transfer-orbits-in-their-final-year) | And in their final year? | Yes: 39% → 10% on the test years, and 100% get an answer instead of 80% |
 
 ## 001: Baseline models
 
@@ -392,3 +393,20 @@ The middle half of predicted / actual lifetimes goes from 2.0–21.7 to 0.68–1
 **Conclusion:** for transfer orbits the Sun and Moon aren't a correction, they decide the lifetime: with drag alone the model mostly predicts a perigee that never comes down, while the real perigee is pulled down into the air (or lifted out of it) over months. J₂ alone changes nothing, as expected, since it turns the orbit without changing the perigee height, but it matters together with the Sun and Moon by setting which way the orbit faces them. With all three, transfer orbits are predicted about as well as near-circular ones (28% against Part 1's 29%), years ahead, from 40 days of tracking.
 
 **Follow-up:** `lifetime_model.py` now simulates every transfer orbit whose angles are known this way (near-circular orbits stay drag-only, and their predictions are unchanged). Part 1's physics with the solar-cycle forecast goes from 29% to **26%** median error on all 2,982 objects with a fitted B, and from 528% to 29% on the 250 transfer rocket bodies among them. In `train_lifetime_model.py`, counting every object (no fitted B counts as 30 years), the physics on transfer rocket bodies goes from 533% to 32%, and the hybrid built on it from 71% to 37%. XGBoost alone stays at 68%. The hybrid over all 4,948 objects goes from 26% to 25%. The lookup tool now asks Space-Track for the two angles, and uses this physics (with the solar-cycle forecast, and no hybrid, which learned to correct drag alone) for a transfer orbit more than 10 days from reentry.
+
+## 026: The Moon and the Sun on transfer orbits in their final year
+
+**Setup:** 025 fixed transfer orbits years ahead, from 40 days after launch. Does the same help in the final year, which is what the lookup and the live forecasts predict? The main physics (003, with the drag cap from 021) is also poor on these orbits: on the weekly rows with an apogee above 5,000 km, about 4% of all weekly rows, it has an answer for only 73%. `download_final_year_angles.py` fetched the node and argument of perigee for all 24,337 of those rows (1,049 objects), and `experiments.py final_year_transfer` simulates the 19,532 rows with a plausible B (803 objects) from the same orbits, with the same fitted B and the same space weather held fixed, with drag only (as now) and with J₂, the Sun and the Moon. With every force but drag turned off, the second integrator matches the first to a median 0.01%. Nothing is fitted, so every row is scored; the test years are also shown alone.
+
+| Rows | Forces | 1–4 weeks | 1–3 months | 3–12 months | Overall | Within 25% | With an answer |
+|---|---|---|---|---|---|---|---|
+| All years, both have an answer (14,288) | Drag only (now) | 88% | 52% | 39% | 42% | 39% | |
+| | **Drag + J₂ + Sun + Moon** | **53%** | **23%** | **13%** | **15%** | **69%** | |
+| All years, every row (19,532; no answer counts as 365 days) | Drag only (now) | 100% | 97% | 49% | 53% | 33% | 73% |
+| | **Drag + J₂ + Sun + Moon** | **58%** | **25%** | **14%** | **15%** | **69%** | **99%** |
+| Test (reentered 2024+), every row (1,943) | Drag only (now) | 128% | 49% | 38% | 39% | 38% | 80% |
+| | **Drag + J₂ + Sun + Moon** | **45%** | **17%** | **10%** | **10%** | **80%** | **100%** |
+
+In the final week (95 rows) both are equally poor (median error 100%): the perigee is already near 100 km, where the simulation stops, and within 10 days the lookup and the live forecasts use the 8-day fit (015) anyway. The 90% ranges the live forecasts use (calibrated on drag-only physics, 023 and `forecast_ranges.py`), put around the new predictions for the 2,489 rows from 2023 on, contained the truth 96.5% of the time: 94% at 1–3 months and 98% at 3–12 months, but only 64% at 1–4 weeks (44 rows).
+
+**Conclusion:** the Sun and Moon matter in the final year too. With them, transfer orbits go from the physics' worst case to better than its average: 10% median error on the test years, against 20% for all objects in the replay of the live forecasts. The live forecasts now simulate transfer orbits this way (`live_forecasts.with_sun_and_moon`), as the lookup already does, and keep the existing ranges, which are wide enough except a few weeks out.

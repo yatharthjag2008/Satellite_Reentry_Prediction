@@ -11,7 +11,8 @@ when the forecasting code changes:
    tool runs it: B fitted over up to 30 days of one orbit a day and, within 10
    days of reentry, over the last 8 days of every orbit (EXPERIMENTS.md 015).
    An object first seen recently gets a fit over the days there are, with a
-   90% range calibrated for that (forecast_ranges.py).
+   90% range calibrated for that (forecast_ranges.py). Transfer orbits are
+   simulated with the Moon's and Sun's gravity too (EXPERIMENTS.md 026).
 3. score: once the catalog lists an object as reentered, every forecast made
    for it is compared with the decay date (taken as midday, as in training).
 4. map: for objects whose 90% window is under 2 days, the ground track during
@@ -43,6 +44,8 @@ from collect_snapshots import GP_QUERIES, GP_URL, HEADERS, SATCAT_URL, SPACE_WEA
 from download_history import FIELDS
 from forecast_ranges import OUT_FILE as WIDTHS_FILE
 from ground_track import ground_track, subpoints, satellite
+from lifetime_model import uses_lunisolar
+from lunisolar import days_from_rows
 from physics_model import MAX_B, fit_drag_parameter, forecast, plausible, unit_decay_rate
 from predict_reentry import SHORT_WINDOW, SHORT_WINDOW_BELOW, features
 from train_reentry_model import HORIZONS
@@ -177,6 +180,22 @@ def ranges(days, labels, groups, widths):
     return days / factor, days * factor
 
 
+def with_sun_and_moon(latest, B, days, atm):
+    """days, with transfer orbits (and a plausible B) simulated with the Moon's and Sun's gravity too.
+
+    Like physics_model.forecast, the 81-day flux and 7-day Ap are held fixed
+    (EXPERIMENTS.md 025-026).
+    """
+    transfer = uses_lunisolar(latest) & plausible(B)
+    if not transfer.any():
+        return days
+    rows = latest[transfer]
+    profile = atm.profile(rows["f107_81d"].to_numpy(), rows["ap_7d"].to_numpy())
+    days = days.copy()
+    days[transfer] = days_from_rows(rows, B[transfer], lambda h, idx, t: profile(h, idx), max_days=MAX_FORECAST_DAYS)
+    return days
+
+
 def forecast_all(orbits, atm, widths, now, decayed_ids=()):
     """One row per object still tracked: its latest orbit, status and, if it has one, the forecast."""
     every = features(orbits)
@@ -190,7 +209,7 @@ def forecast_all(orbits, atm, widths, now, decayed_ids=()):
     latest = latest[~latest["NORAD_CAT_ID"].isin(decayed_ids)].reset_index(drop=True)
 
     B, B_short = latest["B_fit"].to_numpy(), latest["B_short"].to_numpy()
-    days = forecast(latest, B, atm, max_days=MAX_FORECAST_DAYS)
+    days = with_sun_and_moon(latest, B, forecast(latest, B, atm, max_days=MAX_FORECAST_DAYS), atm)
     # Within 10 days, the 8-day fit; also for an object seen too briefly for the daily fit.
     short = plausible(B_short) & ((plausible(B) & (days < SHORT_WINDOW_BELOW)) | ~np.isfinite(B))
     days_short = np.full(len(latest), np.nan)

@@ -20,7 +20,7 @@ The common rule of thumb, extrapolating today's rate of sinking, ignores that de
 - **Catalog and space weather.** CelesTrak's satellite catalog (launch and decay dates, object type, radar size) and its record of daily solar and geomagnetic indices since 1957.
 - **Official predictions.** About 13,000 of the US Space Force's Tracking and Impact Prediction (TIP) messages for objects in their final days, used as a benchmark.
 
-**Splits.** Every model trains on objects that reentered before 2024 and is tested on those that reentered from 2024 on, so the test objects are both unseen and later in time. Every modeling choice (settings, fit windows, rules) was made on a validation year (objects that reentered in 2023), never on the test set. Each choice is logged in a numbered experiment log (25 experiments so far).
+**Splits.** Every model trains on objects that reentered before 2024 and is tested on those that reentered from 2024 on, so the test objects are both unseen and later in time. Every modeling choice (settings, fit windows, rules) was made on a validation year (objects that reentered in 2023), never on the test set. Each choice is logged in a numbered experiment log (26 experiments so far).
 
 ## 3. Method
 
@@ -83,7 +83,7 @@ With fresh orbits and the drag measured over only the last eight days, which cap
 
 From only an object's orbits 10–40 days after launch, the same physics with a forecast of the solar cycle predicts its whole lifetime, often years ahead. On 2,982 satellites and rocket bodies launched since 2000, including the Moon's and Sun's gravity for transfer orbits (below), the median error is 26% (19% for lifetimes of 3–10 years), against 69% with today's solar flux held fixed. Tested on a later period of launches, the physics held up while ML models trained on earlier launches did not (experiment 019).
 
-**Transfer orbits.** Rocket bodies left in stretched orbits toward geostationary altitude reach tens of thousands of kilometers, where the Moon's and Sun's gravity slowly move the perigee, and drag alone predicts most of them to stay up for decades (median error 503%). Adding the orbit-averaged tides of the Sun and Moon at their actual positions, and Earth's flattening, in the vector form of Milankovitch's equations, brings the median error on 261 transfer orbits down to **28%**, the same as for ordinary orbits, with 97% of them predicted to fall within 30 years instead of 66% (experiment 025). Part 1 now simulates every transfer orbit this way, and the hybrid built on it improves from 71% to 37% on them.
+**Transfer orbits.** Rocket bodies left in stretched orbits toward geostationary altitude reach tens of thousands of kilometers, where the Moon's and Sun's gravity slowly move the perigee, and drag alone predicts most of them to stay up for decades (median error 503%). Adding the orbit-averaged tides of the Sun and Moon at their actual positions, and Earth's flattening, in the vector form of Milankovitch's equations, brings the median error on 261 transfer orbits down to **28%**, the same as for ordinary orbits, with 97% of them predicted to fall within 30 years instead of 66% (experiment 025). Part 1 now simulates every transfer orbit this way, and the hybrid built on it improves from 71% to 37% on them. The same holds in an object's final year: on 1,943 weekly test rows of transfer orbits, the median error drops from 39% to 10%, and every row gets an answer instead of 80% (experiment 026), so the lookup and the live forecasts use it too.
 
 ## 5. Live forecasts
 

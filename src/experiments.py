@@ -435,13 +435,64 @@ def transfer_orbits(max_step=1.0):
         print(f"{name}: predicted / actual, middle half {np.percentile(ratio, 25):.2f} to {np.percentile(ratio, 75):.2f}")
 
 
+def final_year_transfer(max_step=1.0):
+    """Do the Moon's and Sun's gravity help transfer orbits in their final year too?
+
+    The weekly physics rows (physics_model.py) with an apogee above 5,000 km, from
+    the same orbits, with the same fitted B and the same space weather held fixed,
+    simulated with drag only (as now) and with J2, the Sun and the Moon
+    (lunisolar.py). Nothing is fitted, so every row is scored; the test years
+    are also shown alone. Run download_final_year_angles.py first.
+    """
+    import time
+
+    from download_final_year_angles import OUT_FILE as ANGLES_FILE
+    from lunisolar import orbit_vectors, propagate_lunisolar
+    from physics_model import MAX_DAYS, plausible
+
+    df = pd.concat(load(verbose=False)).merge(pd.read_parquet(ANGLES_FILE), on=["NORAD_CAT_ID", "EPOCH"])
+    print(f"{len(df):,} weekly rows on {df['NORAD_CAT_ID'].nunique():,} transfer orbits with their angles")
+    df = df[plausible(df["B_fit"].to_numpy())].reset_index(drop=True)
+    print(f"{len(df):,} with a plausible B ({df['NORAD_CAT_ID'].nunique():,} objects)")
+    df["a_km"] = semi_major_axis(df["MEAN_MOTION"])
+
+    atm = MsisAtmosphere()
+    profile = atm.profile(df["f107_81d"].to_numpy(), df["ap_7d"].to_numpy())
+    e_vec, j_vec = orbit_vectors(df["eccentricity"], df["INCLINATION"], df["RA_OF_ASC_NODE"], df["ARG_OF_PERICENTER"])
+    jd0 = pd.DatetimeIndex(df["EPOCH"]).to_julian_date().to_numpy()
+    args = (df["a_km"].to_numpy(), e_vec, j_vec, df["B_fit"].to_numpy(), lambda h, idx, t: profile(h, idx), jd0)
+
+    # The same integrator with every force but drag off should repeat physics_model's answers.
+    check = np.arange(0, len(df), max(1, len(df) // 300))
+    sub = (args[0][check], e_vec[check], j_vec[check], args[3][check], lambda h, idx, t: profile(h, check[idx]), jd0[check])
+    plain = propagate_lunisolar(*sub, max_days=MAX_DAYS, max_step=max_step, sun=False, moon=False, j2=False)
+    both = np.isfinite(plain) & np.isfinite(df["physics_days"].to_numpy()[check])
+    print(f"drag only, two integrators: median difference "
+          f"{np.median(np.abs(plain[both] / df['physics_days'].to_numpy()[check][both] - 1)):.2%} on {both.sum()} rows")
+
+    start = time.time()
+    preds = {"drag only (now)": df["physics_days"].to_numpy(),
+             "drag + J2 + Sun + Moon": propagate_lunisolar(*args, max_days=MAX_DAYS, max_step=max_step)}
+    print(f"simulated in {time.time() - start:.0f} s")
+
+    truth = df["days_left"].to_numpy()
+    for name, rows in [("all years", np.ones(len(df), bool)), ("test (reentered 2024+)", (df["DECAY_DATE"] >= "2024-01-01").to_numpy())]:
+        answered = np.isfinite(preds["drag only (now)"]) & np.isfinite(preds["drag + J2 + Sun + Moon"]) & rows
+        print(f"\n{name}: rows where both have an answer ({answered.sum():,})")
+        show(scores({k: v[answered] for k, v in preds.items()}, truth[answered]))
+        print(f"{name}: every row, no answer counted as {NO_PHYSICS_DAYS} days ({rows.sum():,})")
+        show(scores({k: np.where(np.isfinite(v), v, NO_PHYSICS_DAYS)[rows] for k, v in preds.items()}, truth[rows]))
+        print("share with an answer:", {k: f"{np.isfinite(v[rows]).mean():.0%}" for k, v in preds.items()})
+
+
 EXPERIMENTS = {"hybrid_corrections": hybrid_corrections, "hybrid_variants": hybrid_variants, "hybrid_tuning": hybrid_tuning, "xgboost_tuning": xgboost_tuning,
                "solar_forecast": solar_forecast, "drag_stability": drag_stability,
                "final_days_window": final_days_window, "drag_cap": drag_cap,
                "hybrid_drag_cap": hybrid_drag_cap,
                "final_days_ranges": final_days_ranges,
                "storm_bound": storm_bound,
-               "transfer_orbits": transfer_orbits}
+               "transfer_orbits": transfer_orbits,
+               "final_year_transfer": final_year_transfer}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in EXPERIMENTS:

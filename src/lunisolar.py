@@ -17,10 +17,11 @@ adds those effects to the drag simulation:
 
 All vectors are in kilometers, days and Earth's equatorial frame.
 
-    from lunisolar import propagate_lunisolar
+    from lunisolar import propagate_lunisolar, days_from_rows
 """
 
 import numpy as np
+import pandas as pd
 
 from orbit_decay import drag_rates
 
@@ -186,3 +187,14 @@ def propagate_lunisolar(a_km, e_vec, j_vec, B, density, jd0, max_days=3650.0, st
         a[active], ev[active], jv[active], t[active] = a1, e1, j1, t1
         active = active[~down & (t1 < max_days)]
     return reentry
+
+
+def days_from_rows(rows, B, density, max_days=3650.0, **kwargs):
+    """propagate_lunisolar from table rows with a_km, eccentricity, INCLINATION, RA_OF_ASC_NODE,
+    ARG_OF_PERICENTER (degrees) and EPOCH (UTC); B and density as in propagate_lunisolar."""
+    e_vec, j_vec = orbit_vectors(rows["eccentricity"], rows["INCLINATION"], rows["RA_OF_ASC_NODE"],
+                                 rows["ARG_OF_PERICENTER"])
+    epochs = pd.DatetimeIndex(rows["EPOCH"])
+    jd0 = (epochs.tz_convert(None) if epochs.tz is not None else epochs).to_julian_date().to_numpy()
+    return propagate_lunisolar(rows["a_km"].to_numpy(), e_vec, j_vec, np.asarray(B, float), density, jd0,
+                               max_days=max_days, **kwargs)

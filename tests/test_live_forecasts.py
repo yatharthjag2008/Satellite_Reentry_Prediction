@@ -5,8 +5,8 @@ from scipy.integrate import solve_ivp
 
 from atmosphere import MsisAtmosphere
 import live_forecasts
-from live_forecasts import (ORBIT_COLUMNS, add_to_log, fit_label, forecast_all, merge_orbits, ranges, scored_forecasts,
-                            scores, to_orbits)
+from live_forecasts import (MAX_FORECAST_DAYS, ORBIT_COLUMNS, add_to_log, fit_label, forecast_all, merge_orbits, ranges,
+                            scored_forecasts, scores, to_orbits, with_sun_and_moon)
 from orbit_decay import MU, R_EARTH, circular_decay_rate
 
 START = pd.Timestamp("2024-03-01")
@@ -49,6 +49,26 @@ def test_collect_waits_two_hours_between_downloads(tmp_path, monkeypatch):
     live_forecasts.collect(now + pd.Timedelta(hours=1))   # too soon: nothing downloaded
     live_forecasts.collect(now + pd.Timedelta(hours=3))   # the decaying group only
     assert calls == [True, False]
+
+
+def test_only_transfer_orbits_get_the_sun_and_moon():
+    from lunisolar import days_from_rows
+
+    atm = MsisAtmosphere()
+    a = np.array([R_EARTH + 400.0, (2 * R_EARTH + 160.0 + 30000.0) / 2, (2 * R_EARTH + 160.0 + 30000.0) / 2])
+    latest = pd.DataFrame({"a_km": a, "eccentricity": [0.0, 1 - (R_EARTH + 160.0) / a[1], 1 - (R_EARTH + 160.0) / a[2]],
+                           "APOAPSIS": [400.0, 30000.0, 30000.0], "INCLINATION": [51.6, 27.0, 27.0],
+                           "RA_OF_ASC_NODE": [10.0, 100.0, 100.0], "ARG_OF_PERICENTER": [0.0, 180.0, 180.0],
+                           "EPOCH": [START] * 3, "f107_81d": [150.0] * 3, "ap_7d": [10.0] * 3})
+    B = np.array([0.02, 0.3, -0.01])  # the third isn't sinking: no answer either way
+    drag = np.array([100.0, 200.0, np.nan])
+    got = with_sun_and_moon(latest, B, drag, atm)
+    profile = atm.profile(latest["f107_81d"].to_numpy()[1:2], latest["ap_7d"].to_numpy()[1:2])
+    expected = days_from_rows(latest.iloc[1:2], B[1:2], lambda h, idx, t: profile(h, idx), max_days=MAX_FORECAST_DAYS)
+    assert got[0] == 100.0 and np.isnan(got[2])
+    assert np.isfinite(got[1]) and got[1] != 200.0
+    np.testing.assert_allclose(got[1], expected[0])
+    assert drag[1] == 200.0  # the input isn't changed
 
 
 def test_to_orbits_converts_celestrak_rows():

@@ -31,7 +31,7 @@ On objects that reentered from 2024 onward, which no model saw during training (
 - **Against the official US Space Force predictions:** given equally fresh orbits, the physics model is 28% more accurate than the official forecasts from 4+ days out, and within 1.2× of them 2–4 days out; in the final day the official forecasts, with dense radar tracking, are far better. See [below](#against-the-official-predictions).
 - **The physics knows when it's wrong.** A fitted drag parameter above 1 m²/kg is more than any solid object has, so the orbit is being moved by something else (gravity on a stretched orbit, or thrusters); the physics then gives no answer and the hybrid takes over (experiments 021–022).
 
-Every number comes from [`EXPERIMENTS.md`](EXPERIMENTS.md), a numbered log of 25 experiments, with every model setting chosen on a 2023 validation year rather than the test set.
+Every number comes from [`EXPERIMENTS.md`](EXPERIMENTS.md), a numbered log of 26 experiments, with every model setting chosen on a 2023 validation year rather than the test set.
 
 ### Whole lifetimes from the first month (Part 1)
 
@@ -45,7 +45,7 @@ From only an object's orbits 10–40 days after launch, the physics model with a
 
 Near-circular satellites come out at about 25%, near-circular rocket bodies at about 21% and rocket bodies in transfer orbits at 29%. Tested on launches from a later period (2012–2015), the physics held up (23% for satellites), while ML models trained on earlier launches did not (experiment 019). It doesn't work for Starlink, whose lifetime is set by the operator.
 
-**Transfer orbits.** Rocket bodies left in stretched orbits toward geostationary altitude are moved by the Moon's and Sun's gravity, which slowly raises or lowers their perigee, so drag alone mostly predicts they never come down (median error 503% on 261 of them). With the Sun's and Moon's tides and Earth's flattening added ([`lunisolar.py`](src/lunisolar.py), [derivation](docs/derivation.md#9-the-moon-the-sun-and-earths-flattening)), the median error is **28%**, as good as for ordinary orbits, and 97% get an answer instead of 66% (experiment 025). Part 1 and the lookup tool now use this for every transfer orbit.
+**Transfer orbits.** Rocket bodies left in stretched orbits toward geostationary altitude are moved by the Moon's and Sun's gravity, which slowly raises or lowers their perigee, so drag alone mostly predicts they never come down (median error 503% on 261 of them). With the Sun's and Moon's tides and Earth's flattening added ([`lunisolar.py`](src/lunisolar.py), [derivation](docs/derivation.md#9-the-moon-the-sun-and-earths-flattening)), the median error is **28%**, as good as for ordinary orbits, and 97% get an answer instead of 66% (experiment 025). In the final year it helps as much: on the test years the median error drops from 39% to 10% (experiment 026). Part 1, the lookup tool and the live forecasts now use this for every transfer orbit.
 
 ![Lifetime predicted vs. actual](results/lifetime_predicted_vs_actual.png)
 
@@ -54,7 +54,7 @@ Near-circular satellites come out at about 25%, near-circular rocket bodies at a
 Every 6 hours, [`forecasts.yml`](.github/workflows/forecasts.yml) runs [`live_forecasts.py`](src/live_forecasts.py) on GitHub Actions and publishes the results to the [website](https://yatharthjag2008.github.io/Satellite_Reentry_Prediction/#forecasts):
 
 1. **Collect.** CelesTrak's decaying objects every run, and once a day the larger low-orbit groups (below 500 km), the catalog and the space weather. The orbits come from Space-Track through CelesTrak, so they stay in the repository's Actions cache and are never published.
-2. **Forecast.** The physics model, run as in the lookup tool: B fitted over up to 30 days of one orbit a day, or over the last 8 days within 10 days of reentry. Objects tracked for less than a month get a fit over the days there are and a 90% range calibrated for that ([`forecast_ranges.py`](src/forecast_ranges.py)). No forecast is made for an object holding its altitude, or one whose fitted B is too large to be drag.
+2. **Forecast.** The physics model, run as in the lookup tool: B fitted over up to 30 days of one orbit a day, or over the last 8 days within 10 days of reentry. Objects tracked for less than a month get a fit over the days there are and a 90% range calibrated for that ([`forecast_ranges.py`](src/forecast_ranges.py)). Transfer orbits (apogee above 5,000 km) are simulated with the Moon's and Sun's gravity too (experiment 026). No forecast is made for an object holding its altitude, or one whose fitted B is too large to be drag.
 3. **Map.** For each object whose 90% window is under 2 days, the ground track during the window, which is where it can come down ([`ground_track.py`](src/ground_track.py), using SGP4). With a wider window, the answer is the band of latitudes its orbit covers.
 4. **Score.** Every forecast is logged, and once the catalog lists the object as reentered, compared with the decay date.
 
@@ -89,7 +89,7 @@ The physics code is tested against exact answers: in an exponential atmosphere t
 | [`src/download_tip.py`](src/download_tip.py), [`src/download_final_orbits.py`](src/download_final_orbits.py), [`src/compare_official.py`](src/compare_official.py) | Comparison with the official reentry predictions |
 | [`src/solar_cycle.py`](src/solar_cycle.py) | Forecasts solar flux years ahead from the shape of past cycles |
 | [`src/download_early_orbits.py`](src/download_early_orbits.py), [`src/lifetime_model.py`](src/lifetime_model.py), [`src/train_lifetime_model.py`](src/train_lifetime_model.py) | Part 1: whole lifetimes from the first 40 days in orbit |
-| [`src/lunisolar.py`](src/lunisolar.py), [`src/download_transfer_orbits.py`](src/download_transfer_orbits.py) | The Sun's and Moon's gravity and Earth's flattening, for transfer orbits in Part 1 |
+| [`src/lunisolar.py`](src/lunisolar.py), [`src/download_transfer_orbits.py`](src/download_transfer_orbits.py), [`src/download_final_year_angles.py`](src/download_final_year_angles.py) | The Sun's and Moon's gravity and Earth's flattening, for transfer orbits |
 | [`src/live_forecasts.py`](src/live_forecasts.py) | The website's live forecasts: collects CelesTrak orbits, forecasts every tracked object, maps imminent reentries and scores past forecasts (run by GitHub Actions) |
 | [`src/ground_track.py`](src/ground_track.py) | Where an object can come down: its ground track during the reentry window, from SGP4 |
 | [`src/build_site.py`](src/build_site.py) | Builds the website from `site/`, the CelesTrak data, the plots and the live forecasts; GitHub Actions publishes it |
@@ -159,6 +159,8 @@ python src/backtest.py                # year by year since 2005
 python src/download_tip.py            # official predictions
 python src/download_final_orbits.py   # every orbit of the final 40 days
 python src/compare_official.py --fresh
+python src/download_final_year_angles.py  # angles of the final-year transfer orbits: about 20 minutes
+python src/experiments.py final_year_transfer
 python src/forecast_ranges.py         # the physics ranges, used by the lookup and the live forecasts
 
 python src/download_early_orbits.py   # Part 1: about an hour

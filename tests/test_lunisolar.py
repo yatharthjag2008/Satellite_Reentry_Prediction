@@ -76,3 +76,18 @@ def test_without_the_new_forces_it_matches_the_drag_propagator():
     got = propagate_lunisolar(a, e_vec, j_vec, B, density, JD_J2000, max_days=5000, max_step=30.0,
                               sun=False, moon=False, j2=False)
     np.testing.assert_allclose(got, expected, rtol=0.01)
+
+
+def test_days_from_rows_reads_the_elements_and_a_utc_epoch():
+    import pandas as pd
+    from lunisolar import days_from_rows
+
+    rows = pd.DataFrame({"a_km": [R_EARTH + 500.0], "eccentricity": [0.02], "INCLINATION": [28.0],
+                         "RA_OF_ASC_NODE": [20.0], "ARG_OF_PERICENTER": [40.0],
+                         "EPOCH": [pd.Timestamp("2000-01-01 12:00")]})
+    density = lambda h, idx, t: ATM.density(h)
+    e_vec, j_vec = orbit_vectors([0.02], [28.0], [20.0], [40.0])
+    expected = propagate_lunisolar(rows["a_km"].to_numpy(), e_vec, j_vec, [0.05], density, JD_J2000, max_days=1000)
+    for epochs in (rows["EPOCH"], rows["EPOCH"].dt.tz_localize("UTC")):
+        got = days_from_rows(rows.assign(EPOCH=epochs), [0.05], density, max_days=1000)
+        np.testing.assert_allclose(got, expected)

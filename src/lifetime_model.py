@@ -26,7 +26,7 @@ import pandas as pd
 from atmosphere import MsisAtmosphere
 from build_reentry_dataset import DATA_DIR, R_EARTH, add_space_weather
 from download_early_orbits import OUT_FILE as EARLY_FILE
-from lunisolar import orbit_vectors, propagate_lunisolar
+from lunisolar import days_from_rows
 from orbit_decay import propagate
 from physics_model import fit_drag_parameter, prepare, unit_decay_rate
 from solar_cycle import forecast_monthly
@@ -126,15 +126,9 @@ def simulate(table, flux, ap, atm):
         days[rows] = propagate(table["a_km"].to_numpy()[rows], table["eccentricity"].to_numpy()[rows], B[rows],
                                lambda h, idx, t: density(h, rows[idx], t), max_days=MAX_YEARS * 365.25)
     if lunisolar.any():
-        sub = table[lunisolar]
         ls_rows = np.flatnonzero(lunisolar)
-        e_vec, j_vec = orbit_vectors(sub["eccentricity"], sub["INCLINATION"], sub["RA_OF_ASC_NODE"],
-                                     sub["ARG_OF_PERICENTER"])
-        epochs = pd.DatetimeIndex(sub["EPOCH"])
-        jd0 = (epochs.tz_localize(None) if epochs.tz is not None else epochs).to_julian_date().to_numpy()
-        days[ls_rows] = propagate_lunisolar(sub["a_km"].to_numpy(), e_vec, j_vec, B[ls_rows],
-                                            lambda h, idx, t: density(h, ls_rows[idx], t), jd0,
-                                            max_days=MAX_YEARS * 365.25)
+        days[ls_rows] = days_from_rows(table[lunisolar], B[ls_rows], lambda h, idx, t: density(h, ls_rows[idx], t),
+                                       max_days=MAX_YEARS * 365.25)
     return days
 
 
