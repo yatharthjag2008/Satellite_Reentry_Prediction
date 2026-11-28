@@ -170,30 +170,44 @@ def fit_label(tracked_days):
     return np.where(tracked_days < 14, "7", np.where(tracked_days < 30, "14", "30"))
 
 
-def ranges(days, labels, groups, widths):
-    """(low, high) of each forecast's 90% range."""
+def log_widths(days, labels, groups, widths):
+    """log10 width of each forecast's 90% range (NaN where there is none)."""
     w = widths["widths"]
     bands = band_of(days)
-    width = np.array([w[label][g][b] if np.isfinite(d) and w[label][g][b] is not None else np.nan
-                      for d, label, g, b in zip(days, labels, groups, bands)], dtype=float)
+    return np.array([w[label][g][b] if np.isfinite(d) and label in w and w[label][g][b] is not None else np.nan
+                     for d, label, g, b in zip(days, labels, groups, bands)], dtype=float)
+
+
+def ranges(days, labels, groups, widths, sun_moon=None):
+    """(low, high) of each forecast's 90% range.
+
+    Forecasts with the Sun and Moon (sun_moon) get the wider of the "transfer"
+    widths and the usual ones: on later reentries, the transfer widths alone held
+    84% and the usual ones 79% at 1-4 weeks, and the wider of the two 96%
+    (EXPERIMENTS.md 026).
+    """
+    width = log_widths(days, labels, groups, widths)
+    if sun_moon is not None and sun_moon.any() and "transfer" in widths["widths"]:
+        transfer = log_widths(days, np.full(len(days), "transfer"), groups, widths)
+        width = np.where(sun_moon, np.fmax(transfer, width), width)
     factor = 10 ** width
     return days / factor, days * factor
 
 
 def with_sun_and_moon(latest, B, days, atm):
-    """days, with transfer orbits (and a plausible B) simulated with the Moon's and Sun's gravity too.
+    """(days, which rows changed): transfer orbits with a plausible B simulated with the Moon's and Sun's gravity too.
 
     Like physics_model.forecast, the 81-day flux and 7-day Ap are held fixed
     (EXPERIMENTS.md 025-026).
     """
     transfer = uses_lunisolar(latest) & plausible(B)
     if not transfer.any():
-        return days
+        return days, transfer
     rows = latest[transfer]
     profile = atm.profile(rows["f107_81d"].to_numpy(), rows["ap_7d"].to_numpy())
     days = days.copy()
     days[transfer] = days_from_rows(rows, B[transfer], lambda h, idx, t: profile(h, idx), max_days=MAX_FORECAST_DAYS)
-    return days
+    return days, transfer
 
 
 def forecast_all(orbits, atm, widths, now, decayed_ids=()):
@@ -209,7 +223,7 @@ def forecast_all(orbits, atm, widths, now, decayed_ids=()):
     latest = latest[~latest["NORAD_CAT_ID"].isin(decayed_ids)].reset_index(drop=True)
 
     B, B_short = latest["B_fit"].to_numpy(), latest["B_short"].to_numpy()
-    days = with_sun_and_moon(latest, B, forecast(latest, B, atm, max_days=MAX_FORECAST_DAYS), atm)
+    days, sun_moon = with_sun_and_moon(latest, B, forecast(latest, B, atm, max_days=MAX_FORECAST_DAYS), atm)
     # Within 10 days, the 8-day fit; also for an object seen too briefly for the daily fit.
     short = plausible(B_short) & ((plausible(B) & (days < SHORT_WINDOW_BELOW)) | ~np.isfinite(B))
     days_short = np.full(len(latest), np.nan)
@@ -223,7 +237,9 @@ def forecast_all(orbits, atm, widths, now, decayed_ids=()):
     latest["fit"] = np.where(short, f"{SHORT_WINDOW}-day", fit_label(tracked))
     latest["days"] = days
     latest["group"] = group_of(latest)
-    latest["low_days"], latest["high_days"] = ranges(days, latest["fit"], latest["group"], widths)
+    latest["sun_moon"] = sun_moon & ~short  # within 10 days, the 8-day drag fit takes over
+    latest["low_days"], latest["high_days"] = ranges(days, latest["fit"], latest["group"], widths,
+                                                     latest["sun_moon"].to_numpy())
     B_used = np.where(short, B_short, B)
     latest["status"] = np.select(
         [np.isfinite(days), ~np.isfinite(B_used), B_used <= 0, B_used > MAX_B],
@@ -246,6 +262,7 @@ def forecast_records(latest):
             "type": text(r.OBJECT_TYPE), "group": int(r.group),
             "epoch": iso(epoch), "perigee": round(float(r.PERIAPSIS)), "apogee": round(float(r.APOAPSIS)),
             "inclination": round(float(r.INCLINATION), 1), "fit": r.fit, "tracked": round(float(r.tracked_days), 1),
+            "sun_moon": bool(r.sun_moon),
             "days": round(float(r.days), 2),
             "reentry": iso(epoch + pd.Timedelta(days=r.days)),
             "low": iso(epoch + pd.Timedelta(days=r.low_days)) if np.isfinite(r.low_days) else None,

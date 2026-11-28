@@ -17,6 +17,10 @@ calibrated on the latest RECALIBRATION_DAYS of reentries:
 - "8-day, every orbit": the same with every orbit, as the lookup tool gets them
   from Space-Track, scored against the reentry time of the final official (TIP)
   message rather than the catalog date (EXPERIMENTS.md 023).
+- "transfer": transfer orbits simulated with the Moon's and Sun's gravity too
+  (EXPERIMENTS.md 026), from the weekly physics rows with their angles
+  (download_final_year_angles.py). Only about 30 transfer orbits reenter a year,
+  so these use the latest TRANSFER_YEARS years of reentries.
 
 A fitted B above MAX_B means something other than drag is moving the orbit
 (EXPERIMENTS.md 021), so those forecasts are left out here as they are live.
@@ -35,13 +39,15 @@ import pandas as pd
 
 from atmosphere import MsisAtmosphere
 from build_reentry_dataset import DATA_DIR
-from physics_model import MAX_B, fit_drag_parameter, forecast, unit_decay_rate
+from physics_model import MAX_B, fit_drag_parameter, forecast, plausible, semi_major_axis, unit_decay_rate
 from predict_reentry import RANGES_FILE as OUT_FILE, SHORT_WINDOW, SHORT_WINDOW_BELOW, features
 from train_reentry_model import DATA_FILE, PHYSICS_FILE
 from uncertainty import BANDS, MIN_CELL, RECALIBRATION_DAYS, band_of, conformal_quantile, group_of
 
 GROUPS = ["debris and rocket bodies", "other payloads", "Starlink"]
 DAILY_WINDOWS = (7, 14, 30)
+TRANSFER_YEARS = 3
+TRANSFER_MAX_DAYS = 365.0  # as far ahead as the live forecasts go
 COLLECT_EVERY = "6h"
 
 
@@ -102,6 +108,27 @@ def short_widths(atm):
     return table
 
 
+def transfer_widths(atm):
+    """Widths for the Sun-and-Moon physics on transfer orbits, or None without their angles."""
+    from download_final_year_angles import OUT_FILE as ANGLES_FILE
+    from lunisolar import days_from_rows
+
+    if not ANGLES_FILE.exists():
+        return None
+    cols = ["NORAD_CAT_ID", "EPOCH", "DECAY_DATE", "days_left", "OBJECT_TYPE", "is_starlink", "MEAN_MOTION",
+            "eccentricity", "INCLINATION", "f107_81d", "ap_7d"]
+    df = (pd.read_parquet(DATA_FILE, columns=cols).merge(pd.read_parquet(PHYSICS_FILE), on=["NORAD_CAT_ID", "EPOCH"])
+          .merge(pd.read_parquet(ANGLES_FILE), on=["NORAD_CAT_ID", "EPOCH"]))
+    df = df[plausible(df["B_fit"].to_numpy())]
+    df = df[df["DECAY_DATE"] >= df["DECAY_DATE"].max() - pd.Timedelta(days=365 * TRANSFER_YEARS)].reset_index(drop=True)
+    df["a_km"] = semi_major_axis(df["MEAN_MOTION"])
+    profile = atm.profile(df["f107_81d"].to_numpy(), df["ap_7d"].to_numpy())
+    pred = days_from_rows(df, df["B_fit"].to_numpy(), lambda h, idx, t: profile(h, idx), max_days=TRANSFER_MAX_DAYS)
+    table, counts = widths_table(pred, df["days_left"].to_numpy(), group_of(df))
+    print(f"transfer, Sun and Moon: {df['NORAD_CAT_ID'].nunique():,} objects, rows per band {counts[0]}")
+    return table
+
+
 def final_reentry_times():
     """Each object's reentry time from its final TIP message, issued after reentry (compare_official.py)."""
     from download_tip import OUT_FILE as TIP_FILE
@@ -140,6 +167,9 @@ def main():
     widths, first, last = daily_widths()
     widths[f"{SHORT_WINDOW}-day"] = short_widths(atm)
     widths[f"{SHORT_WINDOW}-day, every orbit"] = fresh_widths(atm)
+    transfer = transfer_widths(atm)
+    if transfer is not None:
+        widths["transfer"] = transfer
     OUT_FILE.write_text(json.dumps({
         "coverage": 0.9, "bands": BANDS[:-1] + [1e9], "groups": GROUPS,
         "calibrated_on": f"reentries from {first:%Y-%m-%d} to {last:%Y-%m-%d}",

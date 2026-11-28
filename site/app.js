@@ -240,7 +240,7 @@ function showObject(i) {
     const { when, range } = describeForecast(live);
     note = `<p><strong>Live forecast: reentry around ${escapeHtml(when)}</strong> `
       + `(90% range ${escapeHtml(range)}), from its orbit of ${escapeHtml(formatWhen(Date.parse(live.epoch), true))}, `
-      + `${live.perigee} × ${live.apogee} km. Physics model only; drag fitted over ${escapeHtml(fitText(live))} of tracking.`
+      + `${live.perigee} × ${live.apogee} km. Physics model only; drag fitted over ${escapeHtml(fitText(live))} of tracking${live.sun_moon ? ", with the Moon's and Sun's gravity on this stretched orbit" : ""}.`
       + (live.group === 2 ? " Starlink satellites are steered down by their operator, so treat this as rough." : "")
       + ' <a href="#forecasts">All upcoming reentries</a></p>';
     const band = Math.round(latitudeBand(live.inclination));

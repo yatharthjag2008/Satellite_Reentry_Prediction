@@ -62,7 +62,8 @@ def test_only_transfer_orbits_get_the_sun_and_moon():
                            "EPOCH": [START] * 3, "f107_81d": [150.0] * 3, "ap_7d": [10.0] * 3})
     B = np.array([0.02, 0.3, -0.01])  # the third isn't sinking: no answer either way
     drag = np.array([100.0, 200.0, np.nan])
-    got = with_sun_and_moon(latest, B, drag, atm)
+    got, changed = with_sun_and_moon(latest, B, drag, atm)
+    assert changed.tolist() == [False, True, False]
     profile = atm.profile(latest["f107_81d"].to_numpy()[1:2], latest["ap_7d"].to_numpy()[1:2])
     expected = days_from_rows(latest.iloc[1:2], B[1:2], lambda h, idx, t: profile(h, idx), max_days=MAX_FORECAST_DAYS)
     assert got[0] == 100.0 and np.isnan(got[2])
@@ -103,6 +104,18 @@ def test_ranges_use_the_window_group_and_band():
     np.testing.assert_allclose(low[:2], [5 / 10 ** 0.1, 5 / 10 ** 0.2])
     np.testing.assert_allclose(high[:2], [5 * 10 ** 0.1, 5 * 10 ** 0.2])
     assert np.isnan(low[2]) and np.isnan(high[3])  # no width for that cell; no forecast
+
+
+def test_sun_and_moon_forecasts_use_the_wider_widths():
+    widths = {"widths": {"30": [[0.1] * 5] * 3, "7": [[0.3] * 5] * 3, "transfer": [[0.2] * 5] * 3}}
+    days = np.full(3, 50.0)
+    labels = np.array(["30", "30", "7"])
+    sun_moon = np.array([False, True, True])
+    _, high = ranges(days, labels, np.zeros(3, int), widths, sun_moon)
+    np.testing.assert_allclose(high / days, 10 ** np.array([0.1, 0.2, 0.3]))
+    del widths["widths"]["transfer"]  # not calibrated: the usual widths
+    _, high = ranges(days, labels, np.zeros(3, int), widths, sun_moon)
+    np.testing.assert_allclose(high / days, 10 ** np.array([0.1, 0.1, 0.3]))
 
 
 def test_log_keeps_the_first_forecast_from_each_orbit():
