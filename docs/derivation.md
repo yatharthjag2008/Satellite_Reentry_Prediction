@@ -172,7 +172,7 @@ Both are cross products, so they keep **e**·**j** = 0 and e² + j² = 1, and a 
 
 **Together with drag.** Drag shrinks a, and shortens **e** along itself, by the rates of section 4; **j** lengthens to keep e² + j² = 1. The code integrates all of it with fourth-order Runge–Kutta in steps of at most a day, short enough to follow the Moon around its orbit. The tests check it against exact answers: the J₂ precession rates of the node and perigee match the textbook formulas (Ω̇ = −(3/2)nJ₂(R/p)² cos i and ω̇ = (3/4)nJ₂(R/p)²(5cos²i − 1)) to 0.1%, a distant ring grows the eccentricity of an orbit inclined by 60° and shrinks it at the mirror-image perigee (the Kozai effect), and with the new forces switched off the lifetimes match the drag-only code.
 
-**What it changes.** On 261 transfer orbits in Part 1, predicted from their first 40 days, adding the Sun and Moon brings the median lifetime error from 503% to 28% (experiment 025). With drag alone the model mostly predicts a perigee that never comes down; in reality the Moon and Sun pull it into the air within months or years.
+**What it changes.** On 261 transfer orbits in Part 1, predicted from their first 40 days, adding the Sun and Moon brings the median lifetime error from 503% to 28% (experiment 025). With drag alone the model mostly predicts a perigee that never comes down; in reality the Moon and Sun pull it into the air within months or years. The same holds in an object's final year: on weekly test rows of transfer orbits, the median error of the days left drops from 39% to 10% (experiment 026), so the lookup tool and the live forecasts simulate every transfer orbit (apogee above 5,000 km) this way.
 
 ## References
 
